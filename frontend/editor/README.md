@@ -7,12 +7,7 @@
 1. **安裝依賴**
    ```bash
    yarn install
-   # 或
-   npm install
-   # 或
-   pnpm install
-   ```
-
+   
 2. **設置環境變數**
    
    創建 `.env.local` 文件：
