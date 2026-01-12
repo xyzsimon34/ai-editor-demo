@@ -10,7 +10,7 @@ A lightweight, Notion-style AI text editor built on top of the Novel editor suit
    
 2. **Set Up Environment Variables**
    
-   創建 `.env.local` 文件：
+   Create a `.env.local` file ：
    ```env
    OPENAI_API_KEY=your_openai_api_key_here
    ```
