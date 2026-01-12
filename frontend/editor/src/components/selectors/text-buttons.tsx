@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BoldIcon, CodeIcon, ItalicIcon, StrikethroughIcon, UnderlineIcon } from "lucide-react";
-import { EditorBubbleItem, useEditor } from "novel";
+import { type EditorInstance, EditorBubbleItem, useEditor } from "novel";
 
 type SelectorItem = {
   name: string;
-  isActive: (editor: any) => boolean;
-  command: (editor: any) => void;
+  isActive: (editor: EditorInstance) => boolean;
+  command: (editor: EditorInstance) => void;
   icon: React.ComponentType<{ className?: string }>;
 };
 
@@ -46,7 +46,7 @@ export const TextButtons = () => {
     },
   ];
   return (
-    <div className="flex">
+    <div className={"flex"}>
       {items.map((item) => (
         <EditorBubbleItem
           key={item.name}
@@ -54,9 +54,9 @@ export const TextButtons = () => {
             item.command(editor);
           }}
         >
-          <Button size="sm" className="rounded-none" variant="ghost" type="button">
+          <Button size={"sm"} className={"rounded-none"} variant={"ghost"} type={"button"}>
             <item.icon
-              className={cn("h-4 w-4", {
+              className={cn("size-4", {
                 "text-blue-500": item.isActive(editor),
               })}
             />

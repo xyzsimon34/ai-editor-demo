@@ -22,9 +22,6 @@ interface AISelectorProps {
 export function AISelector({ onOpenChange }: AISelectorProps) {
   const { editor } = useEditor();
   const [inputValue, setInputValue] = useState("");
-
-  if (!editor) return null;
-
   const { completion, complete, isLoading } = useCompletion({
     api: "/api/generate",
     onFinish: () => {
@@ -35,14 +32,16 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
     },
   });
 
+  if (!editor) return null;
+
   const hasCompletion = completion.length > 0;
 
   return (
-    <Command className="w-[350px]">
+    <Command className={"w-[350px]"}>
       {hasCompletion && (
-        <div className="flex max-h-[400px]">
+        <div className={"flex max-h-[400px]"}>
           <ScrollArea>
-            <div className="prose p-2 px-4 prose-sm">
+            <div className={"prose prose-sm p-2 px-4"}>
               <Markdown>{completion}</Markdown>
             </div>
           </ScrollArea>
@@ -50,17 +49,17 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
       )}
 
       {isLoading && (
-        <div className="flex h-12 w-full items-center px-4 text-sm font-medium text-muted-foreground text-purple-500">
-          <Magic className="mr-2 h-4 w-4 shrink-0" />
-          AI is thinking
-          <div className="ml-2 mt-1">
+        <div className={"flex h-12 w-full items-center px-4 text-sm font-medium text-purple-500"}>
+          <Magic className={"mr-2 size-4 shrink-0"} />
+          {"AI is thinking"}
+          <div className={"ml-2 mt-1"}>
             <CrazySpinner />
           </div>
         </div>
       )}
       {!isLoading && (
         <>
-          <div className="relative">
+          <div className={"relative"}>
             <CommandInput
               value={inputValue}
               onValueChange={setInputValue}
@@ -69,8 +68,8 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
               onFocus={() => editor && addAIHighlight(editor)}
             />
             <Button
-              size="icon"
-              className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-900"
+              size={"icon"}
+              className={"absolute right-2 top-1/2 size-6 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-900"}
               onClick={() => {
                 if (completion)
                   return complete(completion, {
@@ -85,7 +84,7 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
                 }).then(() => setInputValue(""));
               }}
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className={"size-4"} />
             </Button>
           </div>
           {hasCompletion ? (

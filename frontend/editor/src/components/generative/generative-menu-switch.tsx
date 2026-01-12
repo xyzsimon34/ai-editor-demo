@@ -28,19 +28,19 @@ const GenerativeMenuSwitch = ({ children, open, onOpenChange }: GenerativeMenuSw
           if (editor) editor.chain().unsetHighlight().run();
         },
       }}
-      className="flex w-fit max-w-[90vw] overflow-hidden rounded-md border border-muted bg-background shadow-xl"
+      className={"flex w-fit max-w-[90vw] overflow-hidden rounded-md border border-muted bg-background shadow-xl"}
     >
       {open && <AISelector open={open} onOpenChange={onOpenChange} />}
       {!open && (
         <Fragment>
           <Button
-            className="gap-1 rounded-none text-purple-500"
-            variant="ghost"
+            className={"gap-1 rounded-none text-purple-500"}
+            variant={"ghost"}
             onClick={() => onOpenChange(true)}
-            size="sm"
+            size={"sm"}
           >
-            <Magic className="h-5 w-5" />
-            Ask AI
+            <Magic className={"size-5"} />
+            {"Ask AI"}
           </Button>
           {children}
         </Fragment>
