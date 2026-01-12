@@ -1,47 +1,48 @@
-"use client";
+'use client'
 
-import { Command, CommandInput } from "@/components/ui/command";
-import { useCompletion } from "@ai-sdk/react";
-import { ArrowUp } from "lucide-react";
-import { useEditor } from "novel";
-import { addAIHighlight } from "novel";
-import { useState } from "react";
-import Markdown from "react-markdown";
-import { Button } from "../ui/button";
-import CrazySpinner from "../ui/icons/crazy-spinner";
-import Magic from "../ui/icons/magic";
-import { ScrollArea } from "../ui/scroll-area";
-import AICompletionCommands from "./ai-completion-command";
-import AISelectorCommands from "./ai-selector-commands";
+import { useState } from 'react'
+import { useCompletion } from '@ai-sdk/react'
+import { ArrowUp } from 'lucide-react'
+import { addAIHighlight, useEditor } from 'novel'
+import Markdown from 'react-markdown'
+
+import { Command, CommandInput } from '@/components/base/Command'
+
+import { Button } from '../base/Button'
+import { ScrollArea } from '../base/ScrollArea'
+import CrazySpinner from '../icons/crazy-spinner'
+import Magic from '../icons/magic'
+import AICompletionCommands from './ai-completion-command'
+import AISelectorCommands from './ai-selector-commands'
 
 interface AISelectorProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 export function AISelector({ onOpenChange }: AISelectorProps) {
-  const { editor } = useEditor();
-  const [inputValue, setInputValue] = useState("");
+  const { editor } = useEditor()
+  const [inputValue, setInputValue] = useState('')
   const { completion, complete, isLoading } = useCompletion({
-    api: "/api/generate",
+    api: '/api/generate',
     onFinish: () => {
       // Completion finished successfully
     },
     onError: (e) => {
-      console.error(e);
-    },
-  });
+      console.error(e)
+    }
+  })
 
-  if (!editor) return null;
+  if (!editor) return null
 
-  const hasCompletion = completion.length > 0;
+  const hasCompletion = completion.length > 0
 
   return (
-    <Command className={"w-[350px]"}>
+    <Command className={'w-[350px]'}>
       {hasCompletion && (
-        <div className={"flex max-h-[400px]"}>
+        <div className={'flex max-h-[400px]'}>
           <ScrollArea>
-            <div className={"prose prose-sm p-2 px-4"}>
+            <div className={'prose prose-sm p-2 px-4'}>
               <Markdown>{completion}</Markdown>
             </div>
           </ScrollArea>
@@ -49,49 +50,51 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
       )}
 
       {isLoading && (
-        <div className={"flex h-12 w-full items-center px-4 text-sm font-medium text-purple-500"}>
-          <Magic className={"mr-2 size-4 shrink-0"} />
-          {"AI is thinking"}
-          <div className={"ml-2 mt-1"}>
+        <div className={'flex h-12 w-full items-center px-4 text-sm font-medium text-purple-500'}>
+          <Magic className={'mr-2 size-4 shrink-0'} />
+          {'AI is thinking'}
+          <div className={'ml-2 mt-1'}>
             <CrazySpinner />
           </div>
         </div>
       )}
       {!isLoading && (
         <>
-          <div className={"relative"}>
+          <div className={'relative'}>
             <CommandInput
               value={inputValue}
               onValueChange={setInputValue}
               autoFocus
-              placeholder={hasCompletion ? "Tell AI what to do next" : "Ask AI to edit or generate..."}
+              placeholder={hasCompletion ? 'Tell AI what to do next' : 'Ask AI to edit or generate...'}
               onFocus={() => editor && addAIHighlight(editor)}
             />
             <Button
-              size={"icon"}
-              className={"absolute right-2 top-1/2 size-6 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-900"}
+              size={'icon'}
+              className={
+                'absolute right-2 top-1/2 size-6 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-900'
+              }
               onClick={() => {
                 if (completion)
                   return complete(completion, {
-                    body: { option: "zap", command: inputValue },
-                  }).then(() => setInputValue(""));
+                    body: { option: 'zap', command: inputValue }
+                  }).then(() => setInputValue(''))
 
-                const slice = editor.state.selection.content();
-                const text = editor.storage.markdown.serializer.serialize(slice.content);
+                const slice = editor.state.selection.content()
+                const text = editor.storage.markdown.serializer.serialize(slice.content)
 
                 complete(text, {
-                  body: { option: "zap", command: inputValue },
-                }).then(() => setInputValue(""));
+                  body: { option: 'zap', command: inputValue }
+                }).then(() => setInputValue(''))
               }}
             >
-              <ArrowUp className={"size-4"} />
+              <ArrowUp className={'size-4'} />
             </Button>
           </div>
           {hasCompletion ? (
             <AICompletionCommands
               onDiscard={() => {
-                editor.chain().unsetHighlight().focus().run();
-                onOpenChange(false);
+                editor.chain().unsetHighlight().focus().run()
+                onOpenChange(false)
               }}
               completion={completion}
             />
@@ -101,5 +104,5 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
         </>
       )}
     </Command>
-  );
+  )
 }

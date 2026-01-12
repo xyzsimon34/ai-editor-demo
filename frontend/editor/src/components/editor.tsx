@@ -16,12 +16,14 @@ import {
 } from "novel";
 import { useEffect, useState } from "react";
 import { useDebouncedCallback } from "use-debounce";
-import { defaultExtensions } from "./extensions";
+
+import { defaultExtensions } from "@/lib/extensions";
+import { uploadFn } from "@/lib/image-upload";
+
 import { slashCommand, suggestionItems } from "./slash-command";
 import GenerativeMenuSwitch from "./generative/generative-menu-switch";
-import { uploadFn } from "./image-upload";
-import { TextButtons } from "./selectors/text-buttons";
-import { Separator } from "./ui/separator";
+import { TextButtons } from "./base/TextButtons";
+import { Separator } from "./base/Separator";
 
 const extensions = [...defaultExtensions, slashCommand];
 

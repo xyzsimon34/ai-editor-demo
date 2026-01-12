@@ -1,7 +1,7 @@
 import { Check, TextQuote, TrashIcon } from 'lucide-react'
 import { useEditor } from 'novel'
 
-import { CommandGroup, CommandItem, CommandSeparator } from '../ui/command'
+import { CommandGroup, CommandItem, CommandSeparator } from '../base/Command'
 
 const AICompletionCommands = ({ completion, onDiscard }: { completion: string; onDiscard: () => void }) => {
   const { editor } = useEditor()

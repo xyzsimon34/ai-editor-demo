@@ -11,7 +11,7 @@ import {
   TextQuote,
 } from "lucide-react";
 import { Command, createSuggestionItems, renderItems } from "novel";
-import { uploadFn } from "./image-upload";
+import { uploadFn } from "@/lib/image-upload";
 
 export const suggestionItems = createSuggestionItems([
   {
