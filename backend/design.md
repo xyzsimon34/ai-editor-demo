@@ -43,28 +43,28 @@ my-editor-project/
 
 ### 1. Refiner API (Direct invocation of single refinement tasks)
 
-* **POST `/api/refine/improve`**
+* **POST `/refine/improve`**
     * **Purpose**: Optimize text quality and clarity.
     * **Request**: `Json<RefineRequest>`
     * **Response**: `Json<RefineResponse>`
-* **POST `/api/refine/fix`**
+* **POST `/refine/fix`**
     * **Purpose**: Fix grammar and spelling errors.
     * **Request**: `Json<RefineRequest>`
     * **Response**: `Json<RefineResponse>`
-* **POST `/api/refine/longer`**
+* **POST `/refine/longer`**
     * **Purpose**: Expand text length while maintaining the original meaning.
     * **Request**: `Json<RefineRequest>`
     * **Response**: `Json<RefineResponse>`
-* **POST `/api/refine/shorter`**
+* **POST `/refine/shorter`**
     * **Purpose**: Shorten text length while maintaining the original meaning.
     * **Request**: `Json<RefineRequest>`
     * **Response**: `Json<RefineResponse>`
 
 ### 2. Intelligence API (Automated judgment and collaboration)
 
-* **POST `/api/intelligence/pulse`**
+* **POST `/intelligence`**
     * **Purpose**: Frontend periodically sends editor state, backend AI evaluates and returns suggestions.
-    * **Request**: `Json<PulseRequest>` (includes `content`, `cursor_pos`, `last_action`, etc.)
+    * **Request**: `Json<PulseRequest>`
     * **Response**: `Json<PulseResponse>` (includes `Vec<Suggestion>`)
 
 ## ✨ Core Workflows

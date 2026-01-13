@@ -68,3 +68,4 @@ regex = { version = "1.11.1" }
 rust_decimal = { version = "1.37.2", features = [
   "serde-with-arbitrary-precision",
 ] }
+enum-iterator = "2.3"

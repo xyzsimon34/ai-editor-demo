@@ -4,7 +4,7 @@ use crate::model::{RefineRequest, RefineResponse};
 use axum::{
     Router,
     extract::{Json, State},
-    routing::post,
+    routing::{get, post},
 };
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
         .route("/shorter", post(shorter_text_handler))
         // agent API
         .route("/agent/pulse", post(agent_pulse_handler))
+        .route("/agent/list", get(list_agents_handler))
 }
 
 // refine by single task
@@ -90,7 +91,45 @@ pub async fn agent_pulse_handler(
     State(state): State<AppState>,
     Json(req): Json<PulseRequest>,
 ) -> Result<Json<PulseResponse>, Error> {
-    let suggestions = HashMap::from([(Agent::Researcher, "Hello, world!".to_string())]);
+    use backend_core::intelligence::Brain;
+    use backend_core::model::PulseInput;
+
+    // Convert bin/backend model to core model
+    let core_req = PulseInput {
+        text: req.text,
+        agents: req
+            .agents
+            .iter()
+            .map(|a| match a {
+                Agent::Researcher => backend_core::model::Agent::Researcher,
+                Agent::Refiner => backend_core::model::Agent::Refiner,
+            })
+            .collect(),
+    };
+
+    // Convert api_key to &'static str for Brain
+    let api_key: &'static str = Box::leak(state.api_key.clone().into_boxed_str());
+
+    let core_resp = Brain::evaluate_pulse(core_req, api_key).await;
+
+    // Convert core model back to bin/backend model
+    let suggestions: HashMap<Agent, String> = core_resp
+        .suggestions
+        .into_iter()
+        .map(|(agent, text)| {
+            let backend_agent = match agent {
+                backend_core::model::Agent::Researcher => Agent::Researcher,
+                backend_core::model::Agent::Refiner => Agent::Refiner,
+            };
+            (backend_agent, text)
+        })
+        .collect();
 
     Ok(Json(PulseResponse { suggestions }))
+}
+
+/// List all available agents.
+#[instrument]
+pub async fn list_agents_handler() -> Result<Json<Vec<Agent>>, Error> {
+    Ok(Json(enum_iterator::all::<Agent>().collect()))
 }

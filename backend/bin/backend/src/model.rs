@@ -10,10 +10,11 @@ pub enum RefineAction {
     Improve,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, enum_iterator::Sequence)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
     Researcher,
+    Refiner,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
