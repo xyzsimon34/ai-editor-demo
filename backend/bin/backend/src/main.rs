@@ -32,10 +32,11 @@ fn main() -> Result<()> {
             db_opts,
             http,
             temporal,
+            opts,
         } => {
             let _guard = init_tracer(Default::default()).expect("tracer setup succeeds. qed");
             let runtime = Cli::create_runtime(cli.worker_threads)?;
-            runtime.block_on(async move { http::run(db_opts, http, temporal).await })
+            runtime.block_on(async move { http::run(db_opts, http, temporal, opts).await })
         }
         Commands::Mono {
             db_opts,

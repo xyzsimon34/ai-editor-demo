@@ -55,6 +55,9 @@ pub enum Commands {
 
         #[clap(flatten)]
         temporal: TemporalOpts,
+
+        #[clap(flatten)]
+        opts: Opts,
     },
     /// Print the GraphQL schema SDL to stdout
     GenerateSchema,
