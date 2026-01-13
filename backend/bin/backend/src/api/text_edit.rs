@@ -1,4 +1,5 @@
 use crate::api::{errors::Error, state::AppState};
+use crate::model::{Agent, PulseRequest, PulseResponse};
 use crate::model::{RefineRequest, RefineResponse};
 use axum::{
     Router,
@@ -9,17 +10,21 @@ use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
 use backend_core::refiner::types::RefineInput;
+use std::collections::HashMap;
 use tracing::instrument;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        // refine API
         .route("/improve", post(improve_text_handler))
         .route("/fix", post(fix_text_handler))
         .route("/longer", post(longer_text_handler))
         .route("/shorter", post(shorter_text_handler))
+        // agent API
+        .route("/agent/pulse", post(agent_pulse_handler))
 }
 
-/// Helper function to handle text refinement requests.
+// refine by single task
 async fn handle_refine_request<F, Fut>(
     state: &AppState,
     req: RefineRequest,
@@ -77,4 +82,15 @@ pub async fn shorter_text_handler(
     Json(req): Json<RefineRequest>,
 ) -> Result<Json<RefineResponse>, Error> {
     handle_refine_request(&state, req, call_shorter_api).await
+}
+
+// agent API
+#[instrument(skip(state, req))]
+pub async fn agent_pulse_handler(
+    State(state): State<AppState>,
+    Json(req): Json<PulseRequest>,
+) -> Result<Json<PulseResponse>, Error> {
+    let suggestions = HashMap::from([(Agent::Researcher, "Hello, world!".to_string())]);
+
+    Ok(Json(PulseResponse { suggestions }))
 }
