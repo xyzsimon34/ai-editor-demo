@@ -16,3 +16,19 @@ export interface AIError {
   code?: string
   details?: unknown
 }
+
+export type Agent = 'researcher' | 'refiner'
+
+export interface PulseRequest {
+  text: string
+  agents: Agent[]
+}
+
+export interface PulseSuggestion {
+  agent: Agent
+  content: string
+}
+
+export interface PulseResponse {
+  suggestions: Record<Agent, string>
+}
