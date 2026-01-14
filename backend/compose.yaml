@@ -9,10 +9,10 @@ services:
     image: gcr.io/aetheras-io/backend:latest
     container_name: backend
     ports:
-      - 3030:3030
+      - 3031:3030
     environment:
       BACKEND_POSTGRES: postgres://postgres:123456@postgres:5432/postgres?sslmode=disable
-      BACKEND_HOST: 0.0.0.0:3030
+      BACKEND_HOST: 0.0.0.0:3031
       BACKEND_TEMPORAL: http://temporal:7233
       BACKEND_TEMPORAL_NAMESPACE: default
       BACKEND_TEMPORAL_TASK_QUEUE: default
@@ -41,9 +41,9 @@ services:
 
   postgres:
     image: postgres:18
-    container_name: postgres
+    container_name: backend-postgres
     ports:
-      - 5432:5432
+      - 5433:5432
     environment:
       POSTGRES_PASSWORD: 123456
     networks:
@@ -51,9 +51,9 @@ services:
 
   adminer:
     image: adminer:5
-    container_name: adminer
+    container_name: backend-adminer
     ports:
-      - 8888:8080
+      - 8889:8080
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DEFAULT_DRIVER: pgsql
@@ -92,11 +92,11 @@ services:
     container_name: temporal-ui
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3030
+      TEMPORAL_CORS_ORIGINS: http://localhost:3031
     depends_on:
       - temporal
     ports:
-      - 8080:8080
+      - 8081:8080
     networks:
       - local
 
@@ -117,7 +117,7 @@ services:
       - stresstest
     environment:
       BASE_URL: ${BASE_URL}
-      REST_BASE_URL: http://host.docker.internal:3030
+      REST_BASE_URL: http://host.docker.internal:3031
       LOG_API_IO: ${LOG_API_IO}
     volumes:
       - ./deployment/stresstest:/scripts:ro
