@@ -122,7 +122,7 @@ pub struct DatabaseOpts {
     /// Database connection
     #[arg(
         long,
-        default_value = "postgres://postgres:123456@localhost:5432/postgres?sslmode=disable",
+        default_value = "postgres://postgres:123456@localhost:5433/postgres?sslmode=disable",
         env = "BACKEND_POSTGRES"
     )]
     pub postgres: String,

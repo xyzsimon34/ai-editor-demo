@@ -73,7 +73,7 @@ local-pg:
     docker compose -f compose.yaml up -d postgres adminer
 
     echo "Waiting for postgres"
-    while ! docker exec postgres pg_isready >/dev/null 2>&1; do sleep 0.1; done
+    while ! docker exec backend-postgres pg_isready >/dev/null 2>&1; do sleep 0.1; done
     # #HACK for some reason even if pg_isready, postgis container isn't accepting connections
     sleep 3
 
