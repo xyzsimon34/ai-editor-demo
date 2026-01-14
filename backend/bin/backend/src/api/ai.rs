@@ -1,17 +1,21 @@
 use crate::api::{errors::Error, state::AppState};
-use crate::model::{Agent, PulseRequest, PulseResponse};
-use crate::model::{RefineRequest, RefineResponse};
+use crate::model::{AgentTriggerRequest, AgentTriggerResponse, RefineRequest, RefineResponse};
+use atb_ai_utils::agent::AgentContext;
+use atb_types::Uuid;
 use axum::{
     Router,
     extract::{Json, State},
-    routing::{get, post},
+    routing::post,
 };
+use backend_core::llm::new_agent;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
 use backend_core::refiner::types::{RefineInput, RefineOutput};
 use std::pin::Pin;
 use tracing::instrument;
+
+pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
 type RefineFuture<'a> =
     Pin<Box<dyn std::future::Future<Output = anyhow::Result<RefineOutput>> + Send + 'a>>;
@@ -23,9 +27,8 @@ pub fn routes() -> Router<AppState> {
         .route("/fix", post(fix_text_handler))
         .route("/longer", post(longer_text_handler))
         .route("/shorter", post(shorter_text_handler))
-        // agent API
-        .route("/agent/pulse", post(agent_pulse_handler))
-        .route("/agent/list", get(list_agents_handler))
+        //  TODO: add agent API
+        .route("/agent/trigger", post(agent_trigger_handler))
 }
 
 // refine by single task
@@ -96,29 +99,19 @@ pub async fn shorter_text_handler(
     .await
 }
 
-// agent API
 #[instrument(skip(state, req))]
-pub async fn agent_pulse_handler(
+pub async fn agent_trigger_handler(
     State(state): State<AppState>,
-    Json(req): Json<PulseRequest>,
-) -> Result<Json<PulseResponse>, Error> {
-    use backend_core::intelligence::Brain;
-    use backend_core::model::PulseInput;
+    Json(req): Json<AgentTriggerRequest>,
+) -> Result<Json<AgentTriggerResponse>, Error> {
+    let role = req.role.unwrap_or_else(|| "writer".to_string());
+    let result = new_agent(&state.api_key, &role).await.map_err(|e| {
+        tracing::error!("Agent trigger failed: {:?}", e);
+        Error::InvalidInput(e.to_string())
+    })?;
 
-    let core_req = PulseInput {
-        text: req.text,
-        agents: req.agents.clone(),
-    };
-
-    let core_resp = Brain::evaluate_pulse(core_req, &state.api_key).await;
-
-    let suggestions = core_resp.suggestions;
-
-    Ok(Json(PulseResponse { suggestions }))
-}
-
-/// List all available agents.
-#[instrument]
-pub async fn list_agents_handler() -> Result<Json<Vec<Agent>>, Error> {
-    Ok(Json(enum_iterator::all::<Agent>().collect()))
+    Ok(Json(AgentTriggerResponse {
+        ok: true,
+        result: Some(result),
+    }))
 }

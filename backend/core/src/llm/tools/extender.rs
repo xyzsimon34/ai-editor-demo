@@ -1,4 +1,4 @@
-use crate::intelligence::types::McpTool;
+use crate::llm::types::McpTool;
 use anyhow::{Context, Result};
 use serde_json::json;
 

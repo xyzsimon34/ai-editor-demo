@@ -1,6 +1,6 @@
-pub mod brain;
+pub mod agent;
 pub mod tools;
 pub mod types;
 
-pub use brain::Brain;
+pub use agent::new_agent;
 pub use types::McpTool;

@@ -38,6 +38,6 @@ pub fn get_sub_agent_definitions() -> Vec<McpTool> {
                 "required": ["text"]
             }),
         },
-        crate::intelligence::tools::extender::to_tool_definition(),
+        crate::llm::tools::extender::to_tool_definition(),
     ]
 }
