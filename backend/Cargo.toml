@@ -69,5 +69,3 @@ rust_decimal = { version = "1.37.2", features = [
   "serde-with-arbitrary-precision",
 ] }
 enum-iterator = "2.3"
-yrs = "0.18"
-tokio-stream = "0.1"

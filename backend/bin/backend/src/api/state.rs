@@ -6,9 +6,6 @@ use crate::{
 use axum::extract::FromRef;
 use backend_core::temporal::WorkflowEngine;
 use sqlx::PgPool;
-use std::sync::Arc;
-use tokio::sync::broadcast;
-use yrs::Doc;
 
 #[derive(Clone, FromRef)]
 pub struct AppState {
@@ -18,8 +15,6 @@ pub struct AppState {
     pub jwt_encoder: Encoder,
     pub jwt_decoder: Decoder,
     pub api_key: String,
-    pub editor_doc: Arc<Doc>,
-    pub editor_broadcast_tx: broadcast::Sender<Vec<u8>>,
 }
 
 impl AppState {
@@ -30,8 +25,6 @@ impl AppState {
         jwt_encoder: Encoder,
         jwt_decoder: Decoder,
         api_key: String,
-        editor_doc: Arc<Doc>,
-        editor_broadcast_tx: broadcast::Sender<Vec<u8>>,
     ) -> Self {
         Self {
             schema,
@@ -40,8 +33,6 @@ impl AppState {
             jwt_encoder,
             jwt_decoder,
             api_key,
-            editor_doc,
-            editor_broadcast_tx,
         }
     }
 }
