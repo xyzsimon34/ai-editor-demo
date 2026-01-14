@@ -7,6 +7,7 @@ use atb_tokio_ext::shutdown_signal;
 use backend_core::{sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
+use crate::api::state::MessageStructure;
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -23,12 +24,18 @@ pub async fn run(
     )
     .await?;
 
+    // Create minimal editor state for Http mode (not used, but required by AppState)
+    let doc = std::sync::Arc::new(yrs::Doc::new());
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
+
     start_http(
         pg_pool,
         client,
         http_opts,
         temporal_opts.task_queue,
         opts.openai_api_key,
+        doc,
+        broadcast_tx,
     )
     .await
 }
@@ -39,6 +46,8 @@ pub async fn start_http(
     http_opts: HttpOpts,
     task_queue: String,
     api_key: String,
+    editor_doc: std::sync::Arc<yrs::Doc>,
+    editor_broadcast_tx: tokio::sync::broadcast::Sender<MessageStructure>,
 ) -> anyhow::Result<()> {
     let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
     let schema = crate::graphql::schema()
@@ -53,6 +62,8 @@ pub async fn start_http(
         jwt_encoder,
         jwt_decoder,
         api_key,
+        editor_doc,
+        editor_broadcast_tx,
     );
 
     tracing::info!("http listening on {}", http_opts.host);

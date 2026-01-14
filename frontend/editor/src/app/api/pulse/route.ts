@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request: text and agents are required' }, { status: 400 })
     }
 
-    const backendUrl = `${env.BACKEND_API_URL}/agent/pulse`
+    const backendUrl = `${env.BACKEND_URL}/agent/pulse`
     const response = await fetch(backendUrl, {
       method: 'POST',
       headers: {

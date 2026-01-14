@@ -130,6 +130,32 @@ const markdownExtension = Markdown.configure({
   transformCopiedText: false,
 });
 
+// Note: Collaboration extension is only available in Tiptap v3
+// For Tiptap v2 (which Novel uses), we'll handle Yjs sync manually in the editor component
+export const getExtensions = () => {
+  return [
+    starterKit,
+    placeholder,
+    tiptapLink,
+    tiptapImage,
+    updatedImage,
+    taskList,
+    taskItem,
+    horizontalRule,
+    aiHighlight,
+    codeBlockLowlight,
+    characterCount,
+    TiptapUnderline,
+    markdownExtension,
+    HighlightExtension,
+    TextStyle,
+    Color,
+    CustomKeymap,
+    GlobalDragHandle,
+  ];
+};
+
+// Keep defaultExtensions for backward compatibility (non-collaborative mode)
 export const defaultExtensions = [
   starterKit,
   placeholder,

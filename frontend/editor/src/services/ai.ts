@@ -3,7 +3,7 @@ import type { GenerateRequest, PulseRequest, PulseResponse } from '@/types/ai'
 import { env } from '@/constants/env'
 
 export async function refineText(text: string, action: 'improve' | 'fix' | 'longer' | 'shorter'): Promise<string> {
-  const endpoint = `${env.BACKEND_API_URL}/${action}`
+  const endpoint = `${env.BACKEND_URL}/${action}`
 
   const response = await fetch(endpoint, {
     method: 'POST',
