@@ -1,4 +1,4 @@
-use crate::api::state::AppState;
+use crate::api::state::{AppState, MessageStructure};
 
 use axum::{
     extract::{
@@ -44,13 +44,26 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // 3. Handle Incoming/Outgoing Tasks
     let mut send_task = tokio::spawn(async move {
-        while let Ok(data) = rx.recv().await {
-            // Send binary sync data to client
-            if sender.send(Message::Binary(data.into())).await.is_err() {
+        // rx.recv() now returns a SyncMessage
+        while let Ok(msg) = rx.recv().await {
+            let ws_msg = match msg {
+                // Unpack Lane A -> Binary
+                MessageStructure::YjsUpdate(data) => {
+                    Message::Binary(data.into())
+                },
+                
+                // Unpack Lane B -> Text
+                MessageStructure::AiCommand(json_string) => {
+                    Message::Text(json_string.into())
+                },
+            };
+    
+            if let Err(e) = sender.send(ws_msg).await {
                 break;
             }
         }
     });
+    
 
     let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {

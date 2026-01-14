@@ -1,4 +1,4 @@
-use crate::{http, opts::*};
+use crate::{api::state::MessageStructure, http, opts::*};
 
 use std::{sync::Arc, time::Duration};
 
@@ -115,18 +115,27 @@ pub async fn run(
     let _xml_fragment = doc.get_or_insert_xml_fragment("content");
 
     // Create Broadcast Channel (Server -> All Clients)
-    let (broadcast_tx, _) = broadcast::channel(100);
+    let (broadcast_tx, _) = broadcast::channel::<MessageStructure>(100);
 
     // Setup Observer: When Yrs changes (by User OR AI), broadcast the delta
     let tx_clone = broadcast_tx.clone();
     let _sub = doc.observe_update_v1(move |_txn, update_event| {
         let update = update_event.update.to_vec();
         // Send binary update to all connected clients
-        let _ = tx_clone.send(update);
+        let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
     });
 
     // Spawn "The AI Agent" (Ghost Writer Demo)
     let ai_doc = doc.clone();
+    let test_clone = broadcast_tx.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(12)).await;
+            tracing::info!("Sending AI COMMANDS YOU!");
+            let _ = test_clone.send(MessageStructure::AiCommand("AI COMMANDS YOU!".to_string()));
+        }
+    });
+
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;

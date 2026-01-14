@@ -63,9 +63,13 @@ export function useCollaboration(ydoc: Y.Doc) {
           // Apply the update from Backend to our local Yjs Doc
           Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
         }
-        // LANE B: Future AI Commands (JSON)
+        // LANE B: AI Commands (Text/JSON)
         else if (typeof data === 'string') {
-          console.log('Received AI Command:', data)
+          console.log('Received AI Command (string):', data)
+        }
+        else {
+          // Debug: log what we actually received
+          console.log('Received unknown message type:', typeof data, data)
         }
       }
     }

@@ -7,6 +7,7 @@ use atb_tokio_ext::shutdown_signal;
 use backend_core::{sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
+use crate::api::state::MessageStructure;
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -46,7 +47,7 @@ pub async fn start_http(
     task_queue: String,
     api_key: String,
     editor_doc: std::sync::Arc<yrs::Doc>,
-    editor_broadcast_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
+    editor_broadcast_tx: tokio::sync::broadcast::Sender<MessageStructure>,
 ) -> anyhow::Result<()> {
     let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
     let schema = crate::graphql::schema()

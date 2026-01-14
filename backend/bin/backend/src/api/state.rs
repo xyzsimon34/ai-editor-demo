@@ -19,7 +19,7 @@ pub struct AppState {
     pub jwt_decoder: Decoder,
     pub api_key: String,
     pub editor_doc: Arc<Doc>,
-    pub editor_broadcast_tx: broadcast::Sender<Vec<u8>>,
+    pub editor_broadcast_tx: broadcast::Sender<MessageStructure>,
 }
 
 impl AppState {
@@ -31,7 +31,7 @@ impl AppState {
         jwt_decoder: Decoder,
         api_key: String,
         editor_doc: Arc<Doc>,
-        editor_broadcast_tx: broadcast::Sender<Vec<u8>>,
+        editor_broadcast_tx: broadcast::Sender<MessageStructure>,
     ) -> Self {
         Self {
             schema,
@@ -44,4 +44,12 @@ impl AppState {
             editor_broadcast_tx,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum MessageStructure {
+    // Lane A: The Y.js binary update
+    YjsUpdate(Vec<u8>), 
+    // Lane B: A JSON string for UI commands (Comments, Toasts, etc)
+    AiCommand(String),
 }
