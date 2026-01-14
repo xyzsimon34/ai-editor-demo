@@ -16,16 +16,17 @@ import {
   type JSONContent
 } from 'novel'
 import { useDebouncedCallback } from 'use-debounce'
+import * as Y from 'yjs'
 
-import { defaultExtensions } from '@/lib/extensions'
+import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
+import { useCollaboration } from '@/hooks/useCollaboration'
+import { createYjsExtension } from '@/lib/yjsExtension'
 
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
 import { slashCommand, suggestionItems } from './slash-command'
-
-const extensions = [...defaultExtensions, slashCommand]
 
 const defaultEditorContent: JSONContent = {
   type: 'doc',
@@ -37,6 +38,14 @@ interface EditorProps {
 }
 
 export default function Editor({ onSaveStatusChange }: EditorProps) {
+  // 1. Create the Yjs Document for collaboration
+  const [ydoc] = useState(() => new Y.Doc())
+  // Create Yjs XML fragment for the editor content (must match backend field name)
+  const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
+  
+  // 2. Setup WebSocket collaboration
+  const { status: collaborationStatus } = useCollaboration(ydoc)
+
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
   const [_saveStatus, setSaveStatus] = useState('Saved')
   const [charsCount, setCharsCount] = useState<number>()
@@ -45,6 +54,20 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [_openColor, _setOpenColor] = useState(false)
   const [_openLink, _setOpenLink] = useState(false)
   const [openAI, setOpenAI] = useState(false)
+
+  // Load Yjs extension asynchronously
+  const [yjsExtension, setYjsExtension] = useState<any>(null)
+
+  useEffect(() => {
+    createYjsExtension(yXmlFragment).then(setYjsExtension)
+  }, [yXmlFragment])
+
+  // Get extensions (include Yjs extension once loaded)
+  const extensions = [
+    ...getExtensions(),
+    ...(yjsExtension ? [yjsExtension] : []),
+    slashCommand,
+  ]
 
   const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
     const json = editor.getJSON()
@@ -58,16 +81,26 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   }, 500)
 
   useEffect(() => {
-    const content = window.localStorage.getItem('novel-content')
-    if (content) setInitialContent(JSON.parse(content))
-    else setInitialContent(defaultEditorContent)
-  }, [])
+    // When Yjs is active, use empty content - ySyncPlugin will populate from Yjs
+    if (yjsExtension) {
+      setInitialContent(defaultEditorContent)
+    } else {
+      const content = window.localStorage.getItem('novel-content')
+      if (content) setInitialContent(JSON.parse(content))
+      else setInitialContent(defaultEditorContent)
+    }
+  }, [yjsExtension])
 
-  if (!initialContent) return null
+  if (!initialContent || !yjsExtension) return null
 
   return (
     <div className={'relative w-full'}>
-      <div className={'mb-4 flex items-center justify-end gap-4 text-sm text-muted-foreground'}>
+      <div className={'mb-4 flex items-center justify-between gap-4 text-sm text-muted-foreground'}>
+        <div className={'flex items-center gap-2'}>
+          <span className={collaborationStatus === 'connected' ? 'text-green-600' : 'text-red-600'}>
+            {collaborationStatus === 'connected' ? '● Connected' : '○ Disconnected'}
+          </span>
+        </div>
         {charsCount !== undefined && charsCount > 0 && (
           <div className={'flex items-center gap-2'}>
             <span>

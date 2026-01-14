@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use atb_cli_utils::AtbCli;
 use backend_core::{sqlx_postgres, temporal};
 use tokio::sync::broadcast;
-use yrs::{Doc, Text, Transact};
+use yrs::{Doc, Text, Transact, XmlFragment};
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -29,12 +29,9 @@ pub async fn run(
         std::thread::spawn(move || crate::worker::start_worker(client, worker_config));
 
     // Initialize the Yrs Document for collaborative editing
+    // Start with empty fragment - y-prosemirror will handle structure automatically
     let doc = Arc::new(Doc::new());
-    let text = doc.get_or_insert_text("content");
-    {
-        let mut txn = doc.transact_mut();
-        text.insert(&mut txn, 0, "Welcome to the AI Editor.\n");
-    }
+    let _xml_fragment = doc.get_or_insert_xml_fragment("content");
 
     // Create Broadcast Channel (Server -> All Clients)
     let (broadcast_tx, _) = broadcast::channel(100);
@@ -53,9 +50,56 @@ pub async fn run(
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
             tracing::info!("🤖 AI is writing...");
-            let text = ai_doc.get_or_insert_text("content");
+            let xml_fragment = ai_doc.get_or_insert_xml_fragment("content");
             let mut txn = ai_doc.transact_mut();
-            text.push(&mut txn, " [AI was here] ");
+            
+            // Wait for user to create content first (paragraph structure)
+            // Then append AI text to the last paragraph
+            let len = xml_fragment.len(&txn);
+            if len > 0 {
+                // Get the last element (should be a paragraph)
+                if let Some(last_elem) = xml_fragment.get(&txn, len - 1) {
+                    // Check if it's a paragraph element
+                    if let yrs::types::xml::XmlOut::Element(para) = last_elem {
+                        // Get the paragraph's tag name
+                        let tag = para.tag();
+                        if tag.as_ref() == "paragraph" {
+                            // Try to find a text node in the paragraph and append to it
+                            let para_len = para.len(&txn);
+                            if para_len > 0 {
+                                // Check the last child - if it's text, append to it
+                                // First, get the text node (immutable borrow)
+                                let text_node_opt = para.get(&txn, para_len - 1)
+                                    .and_then(|child| {
+                                        if let yrs::types::xml::XmlOut::Text(text_ref) = child {
+                                            Some(text_ref)
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                
+                                // Now use it mutably
+                                if let Some(text_ref) = text_node_opt {
+                                    // XmlTextRef should work like Text - try using Text trait methods
+                                    // Get current length and insert at the end
+                                    let current_len = text_ref.len(&txn);
+                                    text_ref.insert(&mut txn, current_len, " [AI was here] ");
+                                    tracing::info!("✅ AI appended text!");
+                                } else {
+                                    // Last child isn't text
+                                    tracing::info!("⚠️ Last child is not text, would create new text node");
+                                }
+                            } else {
+                                // Empty paragraph - would create text node
+                                tracing::info!("⚠️ Empty paragraph, would create text node");
+                            }
+                        }
+                    }
+                }
+            } else {
+                tracing::info!("⏳ Waiting for user to create content first...");
+            }
+            
             // The observer above automatically catches this and updates the frontend!
         }
     });
