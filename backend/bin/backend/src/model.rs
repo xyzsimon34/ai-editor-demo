@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -30,5 +29,6 @@ pub struct AgentTriggerRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentTriggerResponse {
     pub ok: bool,
+    pub role: String,
     pub result: Option<String>,
 }

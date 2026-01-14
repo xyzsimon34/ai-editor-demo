@@ -112,6 +112,7 @@ pub async fn agent_trigger_handler(
 
     Ok(Json(AgentTriggerResponse {
         ok: true,
+        role: role,
         result: Some(result),
     }))
 }

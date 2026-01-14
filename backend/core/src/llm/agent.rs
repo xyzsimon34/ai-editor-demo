@@ -3,7 +3,8 @@ use crate::llm::tools::extender;
 pub async fn new_agent(api_key: &str, role: &str) -> Result<String, anyhow::Error> {
     let api_key = api_key.to_string();
 
-    let plain_text = "Hello, world!";
+    let plain_text =
+        "In Taipei in 2050, AI will no longer be merely a tool, but a conscious citizen. This";
 
     let result = extender::execute_tool(plain_text, role, &api_key)
         .await
