@@ -50,5 +50,7 @@ futures = { workspace = true }
 yrs = "0.21"
 tokio-stream = "0.1.18"
 
+atb-ai-utils.workspace = true
+
 [build-dependencies]
 atb-build-utils = { git = "https://github.com/aetheras-io/atb-rs", tag = "v1.4.9" }
