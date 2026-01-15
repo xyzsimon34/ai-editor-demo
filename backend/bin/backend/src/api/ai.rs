@@ -102,10 +102,10 @@ pub async fn shorter_text_handler(
     .await
 }
 
-#[instrument(skip(state, req))]
+#[instrument(skip(state, _req))]
 pub async fn linter_text_handler(
     State(state): State<AppState>,
-    Json(req): Json<RefineRequest>,
+    Json(_req): Json<RefineRequest>,
 ) -> Result<Json<RefineResponse>, Error> {
     tracing::info!(
         "Linter handler called, modifying document. Current subscribers: {}",
