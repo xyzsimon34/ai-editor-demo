@@ -12,8 +12,17 @@ interface AiCommandPayload {
   payload?: AiPayload
 }
 
+interface AIStatusMessage {
+  type: 'AI_STATUS'
+  status: 'thinking' | 'done'
+  message: string
+}
+
+type AIStatus = 'idle' | 'thinking' | 'done'
+
 interface UseCollaborationReturn {
   status: ConnectionStatus
+  aiStatus: AIStatus
   runAiCommand: (action: string, payload?: AiPayload) => void
 }
 
@@ -25,6 +34,7 @@ const CLEAN_CLOSE_CODE = 1000
 
 export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
+  const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -114,8 +124,15 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
         if (data instanceof ArrayBuffer) {
           Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
         } else if (typeof data === 'string') {
-          // eslint-disable-next-line no-console
-          console.log('Received AI Command (string):', data)
+          try {
+            const parsed = JSON.parse(data) as AIStatusMessage
+            if (parsed.type === 'AI_STATUS') {
+              setAiStatus(parsed.status)
+            }
+          } catch {
+            // eslint-disable-next-line no-console
+            console.log('Received non-JSON string:', data)
+          }
         } else {
           // eslint-disable-next-line no-console
           console.log('Received unknown message type:', typeof data, data)
@@ -135,7 +152,7 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
     }
   }, [ydoc])
 
-  return { status, runAiCommand }
+  return { status, aiStatus, runAiCommand }
 }
 
 // Helpers

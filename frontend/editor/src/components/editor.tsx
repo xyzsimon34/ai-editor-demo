@@ -27,6 +27,7 @@ import { createYjsExtension } from '@/lib/yjsExtension'
 import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
 import { useCollaboration } from '@/hooks/useCollaboration'
 
+import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
@@ -46,7 +47,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [ydoc] = useState(() => new Y.Doc())
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
 
-  const { status: collaborationStatus, runAiCommand } = useCollaboration(ydoc)
+  const { status: collaborationStatus, aiStatus, runAiCommand } = useCollaboration(ydoc)
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
@@ -151,6 +152,8 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   return (
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
+      <AIStatusBubble status={aiStatus} />
+
       <div
         className={
           'fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'
