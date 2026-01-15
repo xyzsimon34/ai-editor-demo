@@ -59,34 +59,13 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
 
   const shouldTriggerAI = useCallback(
     (content: string, charCount: number): boolean => {
-      const state = stateRef.current
-      const now = Date.now()
-
-      if (state.lastTriggerTime > 0 && now - state.lastTriggerTime < cooldownMs) {
-        return false
-      }
-
       if (charCount < minCharacters) {
         return false
       }
 
-      const changeAmount = charCount - state.lastContentLength
-      const isFirstTrigger = state.lastTriggerTime === 0
-
-      if (isFirstTrigger) {
-        return true
-      }
-
-      if (changeAmount < minChangeThreshold) {
-        return false
-      }
-
-      const trimmedContent = content.trim()
-      const endsWithPunctuation = /[.!?。！？\n]$/.test(trimmedContent)
-
-      return changeAmount >= minChangeThreshold || endsWithPunctuation
+      return true
     },
-    [cooldownMs, minCharacters, minChangeThreshold]
+    [minCharacters]
   )
 
   const scheduleAITrigger = useCallback(() => {
