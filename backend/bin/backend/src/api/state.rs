@@ -4,7 +4,7 @@ use crate::{
 };
 
 use axum::extract::FromRef;
-use backend_core::temporal::WorkflowEngine;
+use backend_core::{editor, temporal::WorkflowEngine};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -21,6 +21,7 @@ pub struct AppState {
     pub api_key: String,
     pub editor_doc: Arc<Doc>,
     pub editor_broadcast_tx: broadcast::Sender<MessageStructure>,
+    pub user_writing_state: Option<Arc<editor::UserWritingState>>,
 }
 
 impl AppState {
@@ -33,6 +34,7 @@ impl AppState {
         api_key: String,
         editor_doc: Arc<Doc>,
         editor_broadcast_tx: broadcast::Sender<MessageStructure>,
+        user_writing_state: Option<Arc<editor::UserWritingState>>,
     ) -> Self {
         Self {
             schema,
@@ -43,6 +45,7 @@ impl AppState {
             api_key,
             editor_doc,
             editor_broadcast_tx,
+            user_writing_state,
         }
     }
 }
@@ -50,7 +53,7 @@ impl AppState {
 #[derive(Clone, Debug)]
 pub enum MessageStructure {
     // Lane A: The Y.js binary update
-    YjsUpdate(Vec<u8>), 
+    YjsUpdate(Vec<u8>),
     // Lane B: A JSON string for UI commands (Comments, Toasts, etc)
     AiCommand(String),
 }

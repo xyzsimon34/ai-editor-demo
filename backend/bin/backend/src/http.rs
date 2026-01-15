@@ -1,13 +1,13 @@
 use crate::{api, opts::*};
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{sqlx_postgres, temporal};
+use backend_core::{editor, sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
-use crate::api::state::MessageStructure;
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -36,6 +36,7 @@ pub async fn run(
         opts.openai_api_key,
         doc,
         broadcast_tx,
+        None, // user_writing_state: None for http mode
     )
     .await
 }
@@ -48,6 +49,7 @@ pub async fn start_http(
     api_key: String,
     editor_doc: std::sync::Arc<yrs::Doc>,
     editor_broadcast_tx: tokio::sync::broadcast::Sender<MessageStructure>,
+    user_writing_state: Option<Arc<editor::UserWritingState>>,
 ) -> anyhow::Result<()> {
     let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
     let schema = crate::graphql::schema()
@@ -64,6 +66,7 @@ pub async fn start_http(
         api_key,
         editor_doc,
         editor_broadcast_tx,
+        user_writing_state,
     );
 
     tracing::info!("http listening on {}", http_opts.host);

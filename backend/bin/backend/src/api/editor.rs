@@ -1,4 +1,6 @@
-use crate::api::state::{AppState, MessageStructure, AiCommand};
+use crate::api::state::{AiCommand, AppState, MessageStructure};
+use atb_ai_utils::agent::AgentContext;
+use atb_types::Uuid;
 use axum::{
     extract::{
         State,
@@ -7,14 +9,13 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use futures::{sink::SinkExt, stream::StreamExt};
-use yrs::{ReadTxn, Transact, Update, updates::decoder::Decode};
-use atb_ai_utils::agent::AgentContext;
-use atb_types::Uuid;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
 use backend_core::refiner::types::RefineInput;
+use futures::{sink::SinkExt, stream::StreamExt};
+use std::time::Duration;
+use yrs::{ReadTxn, Transact, Update, updates::decoder::Decode};
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
 pub fn routes() -> axum::Router<AppState> {
@@ -69,6 +70,21 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             match msg {
                 // LANE A: Binary Sync (Existing)
                 Message::Binary(data) => {
+                    // 標記用戶正在寫入
+                    if let Some(user_state) = &state_clone.user_writing_state {
+                        user_state.mark_user_writing();
+
+                        // 設置定時器，自動清除標記
+                        let user_state_clone = user_state.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_millis(
+                                user_state_clone.writing_timeout_ms,
+                            ))
+                            .await;
+                            user_state_clone.clear_user_writing();
+                        });
+                    }
+
                     let mut txn = state_clone.editor_doc.transact_mut();
                     if let Ok(update) = Update::decode_v1(&data) {
                         if let Err(e) = txn.apply_update(update) {
@@ -83,20 +99,32 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         // We spawn a new thread/task so we don't block the websocket heartbeat
                         let state_for_task = state.clone();
                         let cmd_action = cmd.action.clone();
-                        let _ = state_for_task.editor_broadcast_tx.send(
-                            MessageStructure::AiCommand(serde_json::json!({
-                                "type": "AI_STATUS",
-                                "status": "thinking",
-                                "message": "Polishing your text..."
-                            }).to_string())
-                        );
+                        let _ =
+                            state_for_task
+                                .editor_broadcast_tx
+                                .send(MessageStructure::AiCommand(
+                                    serde_json::json!({
+                                        "type": "AI_STATUS",
+                                        "status": "thinking",
+                                        "message": "Polishing your text..."
+                                    })
+                                    .to_string(),
+                                ));
                         tokio::spawn(async move {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
                                     let Some(payload) = cmd.payload else {
-                                        tracing::error!("No payload found for command: {:?}", cmd_action);
-                                        delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
+                                        tracing::error!(
+                                            "No payload found for command: {:?}",
+                                            cmd_action
+                                        );
+                                        delegate_to_frontend(
+                                            &state_for_task,
+                                            "AI_STATUS",
+                                            "error",
+                                            "No payload found for command",
+                                        );
                                         return;
                                     };
                                     // Create the input struct your existing processor expects
@@ -115,12 +143,27 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", format!("Applied {}", cmd.action).as_str());
-                                            delegate_to_frontend(&state_for_task, "AI_RESULT", "complete", output.content.as_str());
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                format!("Applied {}", cmd.action).as_str(),
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_RESULT",
+                                                "complete",
+                                                output.content.as_str(),
+                                            );
                                         }
                                         Err(e) => {
                                             tracing::error!("❌ AI failed: {:?}", e);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", format!("AI failed: {:?}", e).as_str());
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                format!("AI failed: {:?}", e).as_str(),
+                                            );
                                         }
                                     }
                                 }
@@ -130,10 +173,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // Extract the text from the server-side Y.js doc
                                     let current_text = {
                                         let txn = state_for_task.editor_doc.transact();
-                                        let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
+                                        let root = state_for_task
+                                            .editor_doc
+                                            .get_or_insert_xml_fragment("content");
                                         // #TODO: Call Jordan's functions to extract text
                                         "".to_string()
-
                                     };
 
                                     if current_text.trim().is_empty() {
@@ -142,30 +186,35 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                                     // 2. AI PROCESSING PHASE
                                     // Create the input struct your existing processor expects
-                                    let input = RefineInput { content: current_text };
+                                    let input = RefineInput {
+                                        content: current_text,
+                                    };
                                     let api_key = &state_for_task.api_key;
 
                                     // Select the correct function based on action
-                                    let result: Result<String, anyhow::Error> = match cmd_action.as_str() {
-                                        "AGENT" => {
-                                            // Agent logic here
-                                            // If mutable from backend
-                                            // Call Jordan's functions to apply changes
-                                            // If immutable from backend
-                                            // delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", "Polishing your text...");
-                                            Ok("Agent executed successfully".to_string())
-                                        }
-                                        _ => return, // Should be unreachable
-                                    };
+                                    let result: Result<String, anyhow::Error> =
+                                        match cmd_action.as_str() {
+                                            "AGENT" => {
+                                                // Agent logic here
+                                                // If mutable from backend
+                                                // Call Jordan's functions to apply changes
+                                                // If immutable from backend
+                                                // delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", "Polishing your text...");
+                                                Ok("Agent executed successfully".to_string())
+                                            }
+                                            _ => return, // Should be unreachable
+                                        };
 
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
                                             let mut txn = state_for_task.editor_doc.transact_mut();
-                                            let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
-                                            
+                                            let root = state_for_task
+                                                .editor_doc
+                                                .get_or_insert_xml_fragment("content");
+
                                             // #TODO: Call Jordan's functions to apply paragraph content
-                                            
+
                                             tracing::info!("✅ Applied AI changes via CRDT");
                                         }
                                         Err(e) => {
@@ -193,12 +242,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     };
 }
 
-fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, message: &str){
-    let _ = state.editor_broadcast_tx.send(
-        MessageStructure::AiCommand(serde_json::json!({
+fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, message: &str) {
+    let _ = state.editor_broadcast_tx.send(MessageStructure::AiCommand(
+        serde_json::json!({
             "type": command_type,
             "status": status,
             "message": message
-        }).to_string())
-    );
+        })
+        .to_string(),
+    ));
 }

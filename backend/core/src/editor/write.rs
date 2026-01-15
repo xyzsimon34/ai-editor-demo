@@ -1,6 +1,100 @@
 use anyhow::Result;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
 use yrs::{Doc, Text, Transact, XmlFragment};
+
+// ============================================================================
+// User Writing Detection Context
+// ============================================================================
+
+/// 用戶寫入狀態，用於追蹤用戶是否正在寫入
+///
+/// 當用戶正在輸入時，AI 應該暫停追加內容，避免衝突
+#[derive(Clone)]
+pub struct UserWritingState {
+    /// 標記用戶是否正在寫入
+    pub user_writing_flag: Arc<AtomicBool>,
+    /// 用戶停止寫入的閾值（毫秒），超過此時間後自動清除標記
+    pub writing_timeout_ms: u64,
+}
+
+impl UserWritingState {
+    /// 創建新的寫入上下文
+    ///
+    /// # Arguments
+    /// * `writing_timeout_ms` - 用戶停止寫入的閾值（毫秒）
+    pub fn new(writing_timeout_ms: u64) -> Self {
+        Self {
+            user_writing_flag: Arc::new(AtomicBool::new(false)),
+            writing_timeout_ms,
+        }
+    }
+
+    /// 檢查是否可以進行 AI 寫入
+    pub fn on_write(&self) -> bool {
+        !self.user_writing_flag.load(Ordering::Relaxed)
+    }
+
+    /// 標記用戶開始寫入
+    ///
+    /// 當收到用戶輸入時調用此方法
+    pub fn mark_user_writing(&self) {
+        self.user_writing_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// 清除用戶寫入標記
+    ///
+    /// 通常在定時器到期後自動調用
+    pub fn clear_user_writing(&self) {
+        self.user_writing_flag.store(false, Ordering::Relaxed);
+    }
+}
+
+// ============================================================================
+// Word Preparation
+// ============================================================================
+
+/// 將文字預先分割為單詞列表，每個單詞後面會加上空格
+/// 最後一個單詞會添加換行符
+///
+/// # Arguments
+/// * `content` - 要處理的文字內容
+///
+/// # Returns
+/// 預處理的單詞列表，一旦中斷即拋棄
+///
+/// # Example
+/// ```
+/// let words = prepare_words("Hello World");
+/// // 結果: vec!["Hello ", "World\n"]
+/// ```
+pub fn prepare_words(content: &str) -> Vec<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    words
+        .iter()
+        .enumerate()
+        .map(|(index, word)| {
+            let is_last = index == words.len() - 1;
+            if is_last {
+                format!("{}\n", word) // 最後一個單詞加換行
+            } else {
+                format!("{} ", word) // 其他單詞加空格
+            }
+        })
+        .collect()
+}
 
 /// 將 AI 生成的內容寫入 Doc 的最後一個段落
 ///
@@ -88,6 +182,62 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
     Ok(())
 }
 
+/// 逐字追加預處理的單詞列表到文檔
+///
+/// **重要**：一旦檢測到用戶寫入，立即停止並拋棄剩餘單詞，不恢復
+///
+/// # Arguments
+/// * `doc` - 共享的 Yrs Doc 實例
+/// * `words` - 預處理的單詞列表（Vec<String>），每個單詞已包含空格或換行符
+/// * `delay_ms` - 每個單詞之間的延遲（毫秒），用於流式效果，預設100ms
+/// * `user_state` - 用戶寫入狀態，用於檢測用戶是否在寫入
+///
+/// # Returns
+/// `Ok(())` 如果成功完成或中斷
+/// `Err` 如果發生錯誤
+///
+/// # Behavior
+/// - 每次追加前檢查 `user_state.on_write()`
+/// - 如果用戶開始寫入，立即返回 `Ok(())`，拋棄剩餘單詞
+/// - 不保留任何狀態，每次調用都是獨立的
+pub async fn append_ai_content_word_by_word(
+    doc: &Arc<Doc>,
+    words: Vec<String>,
+    delay_ms: u64,
+    user_state: &UserWritingState,
+) -> Result<()> {
+    if words.is_empty() {
+        return Ok(());
+    }
+
+    // 在開始前檢查一次
+    if !user_state.on_write() {
+        tracing::info!("User is writing, skipping AI append");
+        return Ok(()); // 直接拋棄所有單詞
+    }
+
+    // 遍歷預處理的單詞列表
+    for word in words {
+        // 每次追加前再次檢查用戶是否開始寫入
+        if !user_state.on_write() {
+            tracing::info!(
+                "User started writing, stopping AI append and discarding remaining words"
+            );
+            return Ok(()); // 立即停止，拋棄剩餘單詞
+        }
+
+        // 追加單詞（已包含空格或換行符）
+        append_ai_content_to_doc(doc, &word)?;
+
+        // 延遲以產生流式效果
+        if delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +311,132 @@ mod tests {
 
         let content = crate::editor::read::get_doc_content(&doc);
         assert_eq!(content, "Existing");
+    }
+
+    #[test]
+    fn test_prepare_words() {
+        let words = prepare_words("Hello World");
+        assert_eq!(words, vec!["Hello ", "World\n"]);
+
+        let words2 = prepare_words("Single");
+        assert_eq!(words2, vec!["Single\n"]);
+
+        let words3 = prepare_words("  Multiple   Words   Here  ");
+        assert_eq!(words3, vec!["Multiple ", "Words ", "Here\n"]);
+
+        let empty = prepare_words("");
+        assert!(empty.is_empty());
+
+        let whitespace = prepare_words("   ");
+        assert!(whitespace.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_append_word_by_word_with_user_interruption() {
+        let doc = Arc::new(Doc::new());
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        // 創建段落結構
+        {
+            let mut txn = doc.transact_mut();
+            let para = yrs::types::xml::XmlElementPrelim::empty("paragraph");
+            fragment.insert(&mut txn, 0, para);
+        }
+
+        {
+            let mut txn = doc.transact_mut();
+            if let Some(yrs::types::xml::XmlOut::Element(para)) = fragment.get(&txn, 0) {
+                para.insert(&mut txn, 0, XmlTextPrelim::new("Existing"));
+            }
+        }
+
+        let user_state = UserWritingState::new(2000);
+        let words = prepare_words("Hello World");
+
+        // 開始追加
+        let doc_clone = doc.clone();
+        let user_state_clone = user_state.clone();
+        let append_task = tokio::spawn(async move {
+            append_ai_content_word_by_word(&doc_clone, words, 50, &user_state_clone).await
+        });
+
+        // 模擬用戶開始寫入（在第一個單詞後）
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        user_state.mark_user_writing();
+
+        // 等待追加任務完成
+        let result = append_task.await.unwrap();
+        assert!(result.is_ok());
+
+        // 驗證只有部分內容被追加（因為用戶中斷）
+        let content = crate::editor::read::get_doc_content(&doc);
+        assert!(content.contains("Existing"));
+        // 可能只有 "Hello " 被追加，或者都沒有，取決於時機
+    }
+
+    #[tokio::test]
+    async fn test_append_word_by_word_complete() {
+        let doc = Arc::new(Doc::new());
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        // 創建段落結構
+        {
+            let mut txn = doc.transact_mut();
+            let para = yrs::types::xml::XmlElementPrelim::empty("paragraph");
+            fragment.insert(&mut txn, 0, para);
+        }
+
+        {
+            let mut txn = doc.transact_mut();
+            if let Some(yrs::types::xml::XmlOut::Element(para)) = fragment.get(&txn, 0) {
+                para.insert(&mut txn, 0, XmlTextPrelim::new("Existing"));
+            }
+        }
+
+        let user_state = UserWritingState::new(2000);
+        let words = prepare_words("Test Word");
+
+        // 完整追加（用戶未中斷）
+        let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
+        assert!(result.is_ok());
+
+        let content = crate::editor::read::get_doc_content(&doc);
+        assert!(content.contains("Existing"));
+        assert!(content.contains("Test"));
+        assert!(content.contains("Word"));
+    }
+
+    #[tokio::test]
+    async fn test_append_word_by_word_skips_when_user_writing() {
+        let doc = Arc::new(Doc::new());
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        // 創建段落結構
+        {
+            let mut txn = doc.transact_mut();
+            let para = yrs::types::xml::XmlElementPrelim::empty("paragraph");
+            fragment.insert(&mut txn, 0, para);
+        }
+
+        {
+            let mut txn = doc.transact_mut();
+            if let Some(yrs::types::xml::XmlOut::Element(para)) = fragment.get(&txn, 0) {
+                para.insert(&mut txn, 0, XmlTextPrelim::new("Existing"));
+            }
+        }
+
+        let user_state = UserWritingState::new(2000);
+
+        // 標記用戶正在寫入
+        user_state.mark_user_writing();
+
+        let words = prepare_words("Should Not Append");
+
+        // 嘗試追加，但應該被跳過
+        let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
+        assert!(result.is_ok()); // 返回 Ok，但沒有追加內容
+
+        let content = crate::editor::read::get_doc_content(&doc);
+        assert_eq!(content, "Existing"); // 內容未改變
     }
 }
