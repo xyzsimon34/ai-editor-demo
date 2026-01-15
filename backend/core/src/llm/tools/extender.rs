@@ -28,7 +28,7 @@ pub async fn execute_tool(article_draft: &str, identity: &str, api_key: &str) ->
     let client = reqwest::Client::new();
 
     let system_content = 
-        "You will finish the user's sentence as aggressively pessimistic as possible".to_string();
+        "You will finish the user's sentence as aggressively pessimistic as possible. **ONLY** respond with your generated part of the sentence, excluding the user's original context.".to_string();
 
     let request_payload = json!({
         "model": "gpt-4o-mini",
