@@ -240,16 +240,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         return;
                                     }
 
-                                    // 1. READ PHASE (Snapshot)
-                                    // Extract the text from the server-side Y.js doc
-                                    // let current_text = {
-                                    //     let txn = state_for_task.editor_doc.transact();
-                                    //     let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
-                                    //     // #TODO: Call Jordan's functions to extract text
-                                    //     get_doc_content(&state_for_task.editor_doc)
-                                    // };
-
-                                    // 2. AI PROCESSING PHASE
+                                    // 1. AI PROCESSING PHASE
                                     // Create the input struct your existing processor expects
                                     let api_key = &state_for_task.api_key;
 
@@ -257,6 +248,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     let result: Result<String, anyhow::Error> = match cmd_action
                                         .as_str()
                                     {
+                                        // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
                                         "AGENT" => {
                                             // 獲取共享的 UserWritingState
                                             let Some(user_state) =
@@ -339,6 +331,45 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 &user_message,
                                             );
                                         }
+                                    }
+                                }
+                                "TOGGLE" => {
+                                    let content = match cmd_payload {
+                                        Some(crate::api::state::AiCommandPayload::Refiner(
+                                            text,
+                                        )) => text,
+                                        Some(crate::api::state::AiCommandPayload::Agent(_)) => {
+                                            tracing::error!(
+                                                "Refiner command received Agent payload"
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "Invalid payload type for refiner command",
+                                            );
+                                            return;
+                                        }
+                                        None => {
+                                            tracing::error!(
+                                                "No payload found for command: {:?}",
+                                                cmd_action
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "No payload found for command",
+                                            );
+                                            return;
+                                        }
+                                    };
+                                    match content.as_str() {
+                                        "LINT" => {
+                                            tracing::info!("🤖 toggling linter...");
+                                            crate::mono::LINTER_FLAG.store(!crate::mono::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                                        }
+                                        _ => return, // Should be unreachable
                                     }
                                 }
                                 _ => {

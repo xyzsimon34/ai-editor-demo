@@ -1,13 +1,15 @@
 use crate::{api::state::MessageStructure, http, opts::*};
 
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 
 use atb_cli_utils::AtbCli;
 use backend_core::{editor, sqlx_postgres, temporal};
 use tokio::sync::broadcast;
-use yrs::{Doc, Transact, XmlFragment};
+use yrs::Doc;
 
 // Doc 讀寫操作已移至 backend_core::editor 模組
+// Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
+pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -61,9 +63,9 @@ pub async fn run(
             // 先讀取當前文檔內容
             let current_content = editor::get_doc_content(&doc_for_task);
 
-            if !current_content.is_empty() {
-                tracing::info!("📄 Current document content: {}", current_content);
-            }
+            // if !current_content.is_empty() {
+            //     tracing::info!("📄 Current document content: {}", current_content);
+            // }
 
             if before_content == current_content {
                 tracing::info!("🔍 Doc is not changed, skipping linter check");
@@ -72,13 +74,18 @@ pub async fn run(
 
             tracing::info!("🔍 AI is checking for grammar and vocabulary...");
 
-            match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
-                Ok(_) => {
-                    tracing::info!("✅ AI checked for grammar and vocabulary successfully");
+            // Load the flag atomically (thread-safe, no unsafe block needed)
+            if LINTER_FLAG.load(Ordering::Relaxed) {
+                match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
+                    Ok(_) => {
+                        tracing::info!("✅ AI checked for grammar and vocabulary successfully");
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ AI failed to check for grammar and vocabulary: {:?}", e);
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("❌ AI failed to check for grammar and vocabulary: {:?}", e);
-                }
+            } else {
+                tracing::debug!("Linter is disabled, skipping check");
             }
 
             before_content = current_content;

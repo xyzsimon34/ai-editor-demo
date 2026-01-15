@@ -19,7 +19,7 @@ pub async fn new_composer(
 
     // 使用 prepare_words 預處理單詞（添加空格和換行符）
     let words = crate::editor::prepare_words(&result);
-    crate::editor::append_ai_content_word_by_word(doc, words, 10, user_state).await?;
+    crate::editor::append_ai_content_word_by_word(doc, words, 500, user_state).await?;
     Ok(())
 }
 
