@@ -47,7 +47,7 @@ rand.workspace = true
 base64.workspace = true
 enum-iterator = { workspace = true }
 futures = { workspace = true }
-yrs = "0.21"
+yrs = { workspace = true }
 tokio-stream = "0.1.18"
 
 atb-ai-utils.workspace = true
