@@ -52,7 +52,7 @@ pub async fn run(
     // Clone values before moving into the async task
     let api_key_for_task = opts.openai_api_key.clone();
     let doc_for_task = doc.clone();
-    let before_content = "".to_string();
+    let mut before_content = "".to_string();
     tokio::spawn(async move {
         tracing::info!("🚀 Auto-linter task started, will check every 10 seconds");
         loop {
