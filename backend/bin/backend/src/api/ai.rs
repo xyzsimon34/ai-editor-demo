@@ -7,7 +7,6 @@ use axum::{
     extract::{Json, State},
     routing::post,
 };
-use backend_core::llm::new_composer;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };

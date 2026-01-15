@@ -9,6 +9,7 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use backend_core::llm::new_composer;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
@@ -16,7 +17,6 @@ use backend_core::refiner::types::RefineInput;
 use futures::{sink::SinkExt, stream::StreamExt};
 use std::time::Duration;
 use yrs::{ReadTxn, Transact, Update, updates::decoder::Decode};
-use backend_core::llm::new_composer;
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
 pub fn routes() -> axum::Router<AppState> {
@@ -103,33 +103,54 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         let state_for_task = state.clone();
                         let cmd_action = cmd.action.clone();
                         let cmd_payload = cmd.payload.clone();
-                        let _ = state_for_task.editor_broadcast_tx.send(
-                            MessageStructure::AiCommand(serde_json::json!({
-                                "type": "AI_STATUS",
-                                "status": "thinking",
-                                "message": "Polishing your text..."
-                            }).to_string())
-                        );
+                        let _ =
+                            state_for_task
+                                .editor_broadcast_tx
+                                .send(MessageStructure::AiCommand(
+                                    serde_json::json!({
+                                        "type": "AI_STATUS",
+                                        "status": "thinking",
+                                        "message": "Polishing your text..."
+                                    })
+                                    .to_string(),
+                                ));
                         tokio::spawn(async move {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
-                                    
+
                                     // Extract text from Refiner payload
                                     let content = match cmd_payload {
-                                        Some(crate::api::state::AiCommandPayload::Refiner(text)) => text,
+                                        Some(crate::api::state::AiCommandPayload::Refiner(
+                                            text,
+                                        )) => text,
                                         Some(crate::api::state::AiCommandPayload::Agent(_)) => {
-                                            tracing::error!("Refiner command received Agent payload");
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "Invalid payload type for refiner command");
+                                            tracing::error!(
+                                                "Refiner command received Agent payload"
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "Invalid payload type for refiner command",
+                                            );
                                             return;
                                         }
                                         None => {
-                                            tracing::error!("No payload found for command: {:?}", cmd_action);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
+                                            tracing::error!(
+                                                "No payload found for command: {:?}",
+                                                cmd_action
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "No payload found for command",
+                                            );
                                             return;
                                         }
                                     };
-                                    
+
                                     // Create the input struct your existing processor expects
                                     let input = RefineInput { content };
                                     let api_key = &state_for_task.api_key;
@@ -146,41 +167,75 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", &format!("Applied {}", cmd_action));
-                                            delegate_to_frontend(&state_for_task, "AI_RESULT", "complete", &output.content);
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &format!("Applied {}", cmd_action),
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_RESULT",
+                                                "complete",
+                                                &output.content,
+                                            );
                                         }
                                         Err(e) => {
                                             tracing::error!("❌ AI failed: {:?}", e);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &format!("AI failed: {:?}", e));
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                &format!("AI failed: {:?}", e),
+                                            );
                                         }
                                     }
                                 }
                                 "AGENT" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
-                                    
+
                                     // Extract role from Agent payload
                                     let role = match cmd_payload {
-                                        Some(crate::api::state::AiCommandPayload::Agent(agent_payload)) => agent_payload.role,
+                                        Some(crate::api::state::AiCommandPayload::Agent(
+                                            agent_payload,
+                                        )) => agent_payload.role,
                                         Some(crate::api::state::AiCommandPayload::Refiner(_)) => {
-                                            tracing::error!("Agent command received Refiner payload");
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "Invalid payload type for agent command");
+                                            tracing::error!(
+                                                "Agent command received Refiner payload"
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "Invalid payload type for agent command",
+                                            );
                                             return;
                                         }
                                         None => {
-                                            tracing::error!("No payload found for command: {:?}", cmd_action);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
+                                            tracing::error!(
+                                                "No payload found for command: {:?}",
+                                                cmd_action
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                "No payload found for command",
+                                            );
                                             return;
                                         }
                                     };
-                                    
+
                                     // 0. PRE-CHECK: Verify document has content structure
-                                    if !backend_core::editor::write::has_content_structure(&state_for_task.editor_doc) {
+                                    if !backend_core::editor::write::has_content_structure(
+                                        &state_for_task.editor_doc,
+                                    ) {
                                         tracing::warn!("Document has no content structure yet");
                                         delegate_to_frontend(
                                             &state_for_task,
                                             "AI_STATUS",
                                             "error",
-                                            "Please start typing in the editor first. The AI agent needs existing content to work with."
+                                            "Please start typing in the editor first. The AI agent needs existing content to work with.",
                                         );
                                         return;
                                     }
@@ -199,19 +254,49 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     let api_key = &state_for_task.api_key;
 
                                     // Select the correct function based on action
-                                    let result: Result<String, anyhow::Error> = match cmd_action.as_str() {
+                                    let result: Result<String, anyhow::Error> = match cmd_action
+                                        .as_str()
+                                    {
                                         "AGENT" => {
-                                            match new_composer(api_key, &role, &state_for_task.editor_doc).await {
-                                                Ok(_) => Ok("Agent executed successfully".to_string()),
+                                            // 獲取共享的 UserWritingState
+                                            let Some(user_state) =
+                                                &state_for_task.user_writing_state
+                                            else {
+                                                return delegate_to_frontend(
+                                                    &state_for_task,
+                                                    "AI_STATUS",
+                                                    "error",
+                                                    "User writing state not available",
+                                                );
+                                            };
+
+                                            match new_composer(
+                                                api_key,
+                                                &role,
+                                                &state_for_task.editor_doc,
+                                                user_state,
+                                            )
+                                            .await
+                                            {
+                                                Ok(_) => {
+                                                    Ok("Agent executed successfully".to_string())
+                                                }
                                                 Err(e) => {
                                                     // Check if it's the "no content" error and handle gracefully
                                                     let error_msg = e.to_string();
-                                                    if error_msg.contains("Document has no content structure") {
-                                                        Err(anyhow::anyhow!("Document has no content structure yet. User needs to create content first."))
+                                                    if error_msg.contains(
+                                                        "Document has no content structure",
+                                                    ) {
+                                                        Err(anyhow::anyhow!(
+                                                            "Document has no content structure yet. User needs to create content first."
+                                                        ))
                                                     } else {
-                                                        Err(anyhow::anyhow!("Agent failed: {}", error_msg))
+                                                        Err(anyhow::anyhow!(
+                                                            "Agent failed: {}",
+                                                            error_msg
+                                                        ))
                                                     }
-                                                },
+                                                }
                                             }
                                         }
                                         _ => return, // Should be unreachable
@@ -222,24 +307,37 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         Ok(_output) => {
                                             // The agent modifies the doc directly via new_composer
                                             tracing::info!("✅ Applied AI changes via CRDT");
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", "AI agent finished successfully");
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                "AI agent finished successfully",
+                                            );
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();
                                             // Provide user-friendly error messages
-                                            let user_message: String = if error_msg.contains("Document has no content structure") {
+                                            let user_message: String = if error_msg
+                                                .contains("Document has no content structure")
+                                            {
                                                 "Please start typing in the editor first. The AI agent needs existing content to work with.".to_string()
                                             } else if error_msg.contains("Agent failed: ") {
                                                 // Extract a cleaner error message if possible
-                                                error_msg.strip_prefix("Agent failed: ")
+                                                error_msg
+                                                    .strip_prefix("Agent failed: ")
                                                     .map(|s| s.to_string())
                                                     .unwrap_or(error_msg)
                                             } else {
                                                 error_msg
                                             };
-                                            
+
                                             tracing::warn!("❌ AI agent failed: {}", user_message);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &user_message);
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                &user_message,
+                                            );
                                         }
                                     }
                                 }
