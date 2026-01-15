@@ -58,5 +58,5 @@ pub enum MessageStructure {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AiCommand {
     pub action: String,
-    pub payload: Option<serde_json::Value>,
+    pub payload: Option<String>,
 }
