@@ -27,10 +27,8 @@ pub fn to_tool_definition() -> McpTool {
 pub async fn execute_tool(article_draft: &str, identity: &str, api_key: &str) -> Result<String> {
     let client = reqwest::Client::new();
 
-    let system_content = format!(
-        "You are a {}. Please continue the article according to the user's content. The content of the continuation should not repeat the content of the previous article.",
-        identity
-    );
+    let system_content = 
+        "You will finish the user's sentence as aggressively pessimistic as possible".to_string();
 
     let request_payload = json!({
         "model": "gpt-4o-mini",
