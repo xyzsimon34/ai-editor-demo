@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import type { Extension } from '@tiptap/core'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -18,15 +19,16 @@ import {
 import { useDebouncedCallback } from 'use-debounce'
 import * as Y from 'yjs'
 
+import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
-import { useCollaboration } from '@/hooks/useCollaboration'
 import { createYjsExtension } from '@/lib/yjsExtension'
+import { useCollaboration } from '@/hooks/useCollaboration'
 
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
-import { PulseSidebar } from './pulse-sidebar'
+// import { PulseSidebar } from './pulse-sidebar'
 import { slashCommand, suggestionItems } from './slash-command'
 
 const defaultEditorContent: JSONContent = {
@@ -39,37 +41,34 @@ interface EditorProps {
 }
 
 export default function Editor({ onSaveStatusChange }: EditorProps) {
-  // 1. Create the Yjs Document for collaboration
   const [ydoc] = useState(() => new Y.Doc())
-  // Create Yjs XML fragment for the editor content (must match backend field name)
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
-  
-  // 2. Setup WebSocket collaboration
+
   const { status: collaborationStatus } = useCollaboration(ydoc)
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
   const [_saveStatus, setSaveStatus] = useState('Saved')
   const [charsCount, setCharsCount] = useState<number>()
-  const [editorText, setEditorText] = useState('')
+  // const [editorText, setEditorText] = useState('')
+  const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
 
   const [_openNode, _setOpenNode] = useState(false)
   const [_openColor, _setOpenColor] = useState(false)
   const [_openLink, _setOpenLink] = useState(false)
   const [openAI, setOpenAI] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Load Yjs extension asynchronously
-  const [yjsExtension, setYjsExtension] = useState<any>(null)
+  const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
 
   useEffect(() => {
     createYjsExtension(yXmlFragment).then(setYjsExtension)
   }, [yXmlFragment])
 
-  // Get extensions (include Yjs extension once loaded)
   const extensions = [
     ...getExtensions(),
     ...(yjsExtension ? [yjsExtension] : []),
-    slashCommand,
+    AIHighlightDecorationExtension,
+    slashCommand
   ]
 
   const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
@@ -77,8 +76,8 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     const charCount = editor.storage.characterCount.characters()
     setCharsCount(charCount > 0 ? charCount : undefined)
 
-    const text = editor.getText()
-    setEditorText(text)
+    // const text = editor.getText()
+    // setEditorText(text)
 
     window.localStorage.setItem('novel-content', JSON.stringify(json))
     window.localStorage.setItem('markdown', editor.storage.markdown.getMarkdown())
@@ -88,7 +87,6 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   }, 500)
 
   useEffect(() => {
-    // When Yjs is active, use empty content - ySyncPlugin will populate from Yjs
     if (yjsExtension) {
       setInitialContent(defaultEditorContent)
     } else {
@@ -97,6 +95,26 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
       else setInitialContent(defaultEditorContent)
     }
   }, [yjsExtension])
+
+  useEffect(() => {
+    if (!editorInstance || !yjsExtension) return
+
+    const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin !== 'websocket') return
+
+      editorInstance.commands.highlightAIText('[AI was here]')
+
+      setTimeout(() => {
+        editorInstance.commands.clearAIHighlight()
+      }, 3000)
+    }
+
+    ydoc.on('update', handleYjsUpdate)
+
+    return () => {
+      ydoc.off('update', handleYjsUpdate)
+    }
+  }, [ydoc, editorInstance, yjsExtension])
 
   if (!initialContent || !yjsExtension) return null
 
@@ -136,6 +154,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
             }
           }}
           onUpdate={({ editor }) => {
+            setEditorInstance(editor)
             debouncedUpdates(editor)
             const newStatus = 'Unsaved'
             setSaveStatus(newStatus)
@@ -166,7 +185,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
                   </div>
                   <div>
                     <p className={'font-medium'}>{item.title}</p>
-                    <p className={'text-xs text-muted-foreground'}>{item.description}</p>
+                    <p className={'text-xs'}>{item.description}</p>
                   </div>
                 </EditorCommandItem>
               ))}
@@ -181,7 +200,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
         </EditorContent>
       </EditorRoot>
 
-      <PulseSidebar editorText={editorText} isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      {/* <PulseSidebar editorText={editorText} isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} /> */}
     </div>
   )
 }
