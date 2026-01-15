@@ -1,28 +1,5 @@
-use crate::llm::types::McpTool;
 use anyhow::{Context, Result};
 use serde_json::json;
-
-pub fn to_tool_definition() -> McpTool {
-    McpTool {
-        name: "extender".to_string(),
-        description: "Use this tool to continue or extend an article draft while maintaining the same style and identity"
-            .to_string(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "article_draft": {
-                    "type": "string",
-                    "description": "The article draft to continue"
-                },
-                "identity": {
-                    "type": "string",
-                    "description": "The identity or role of the writer (e.g., 'Science fiction writer', 'Technical writer')"
-                }
-            },
-            "required": ["article_draft", "identity"]
-        }),
-    }
-}
 
 pub async fn execute_tool(article_draft: &str, identity: &str, api_key: &str) -> Result<String> {
     let client = reqwest::Client::new();

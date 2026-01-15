@@ -5,10 +5,9 @@ use std::{sync::Arc, time::Duration};
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{editor, sqlx_postgres, temporal};
+use backend_core::{editor, llm, sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
-
 pub async fn run(
     db_opts: DatabaseOpts,
     http_opts: HttpOpts,
@@ -27,6 +26,41 @@ pub async fn run(
     // Create minimal editor state for Http mode (not used, but required by AppState)
     let doc = std::sync::Arc::new(yrs::Doc::new());
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
+
+    // Setup Observer: When Yrs changes, broadcast the delta
+    let tx_clone = broadcast_tx.clone();
+    let _sub = doc.observe_update_v1(move |_txn, update_event| {
+        let update = update_event.update.to_vec();
+        let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
+    });
+
+    // Clone values before moving into the async task
+    let api_key_for_task = opts.openai_api_key.clone();
+    let doc_for_task = doc.clone();
+    tokio::spawn(async move {
+        tracing::info!("🚀 Auto-linter task started, will check every 10 seconds");
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            // 先讀取當前文檔內容
+            let current_content = editor::get_doc_content(&doc_for_task);
+
+            if !current_content.is_empty() {
+                tracing::info!("📄 Current document content: {}", current_content);
+            }
+
+            tracing::info!("🔍 AI is checking for grammar and vocabulary...");
+
+            match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
+                Ok(_) => {
+                    tracing::info!("✅ AI checked for grammar and vocabulary successfully");
+                }
+                Err(e) => {
+                    tracing::error!("❌ AI failed to check for grammar and vocabulary: {:?}", e);
+                }
+            }
+        }
+    });
 
     start_http(
         pg_pool,
