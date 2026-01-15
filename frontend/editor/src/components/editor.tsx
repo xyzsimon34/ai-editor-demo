@@ -50,11 +50,12 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
-  const [charsCount, setCharsCount] = useState<number>()
+  const [characterCount, setCharacterCount] = useState<number>()
   const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
-  const [openAI, setOpenAI] = useState(false)
+  const [isGenerativeMenuOpen, setIsGenerativeMenuOpen] = useState(false)
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
-  const [autoMode, setAutoMode] = useState(false)
+  const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
+  const [isLinterEnabled, setIsLinterEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
 
   useEffect(() => {
@@ -75,19 +76,26 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     }
   }
 
+  const handleLinterToggle = () => {
+    if (!runAiCommand || collaborationStatus !== 'connected') {
+      return
+    }
+    setIsLinterEnabled((prev) => !prev)
+    runAiCommand('TOGGLE', 'LINTER')
+  }
+
   const { scheduleAITrigger, cancelScheduled, isPending, remainingTime } = useAutoAITrigger(editorInstance, {
-    enabled: autoMode,
+    enabled: isAutoModeEnabled,
     debounceMs: 3000,
     minCharacters: 10,
     minChangeThreshold: 10,
-    cooldownMs: 30000,
     onTrigger: handleAITrigger
   })
 
   const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
     const json = editor.getJSON()
     const charCount = editor.storage.characterCount.characters()
-    setCharsCount(charCount > 0 ? charCount : undefined)
+    setCharacterCount(charCount > 0 ? charCount : undefined)
 
     window.localStorage.setItem('novel-content', JSON.stringify(json))
     window.localStorage.setItem('markdown', editor.storage.markdown.getMarkdown())
@@ -95,7 +103,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     setSaveStatus(newStatus)
     onSaveStatusChange?.(newStatus)
 
-    if (autoMode && !isAIGenerating) {
+    if (isAutoModeEnabled && !isAIGenerating) {
       scheduleAITrigger()
     }
   }, 500)
@@ -152,28 +160,47 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           {collaborationStatus === 'connected' ? '●' : '◐'}
         </span>
         <span className={'text-zinc-400'}>{saveStatus}</span>
-        {charsCount !== undefined && charsCount > 0 && <span className={'text-zinc-500'}>{charsCount} characters</span>}
+        {characterCount !== undefined && characterCount > 0 && (
+          <span className={'text-zinc-500'}>{`${characterCount} characters`}</span>
+        )}
       </div>
 
       <div className={'fixed bottom-6 left-6 z-50 flex items-center gap-3'}>
         <Button
           onClick={() => {
-            setAutoMode(!autoMode)
-            if (autoMode) {
+            setIsAutoModeEnabled(!isAutoModeEnabled)
+            if (isAutoModeEnabled) {
               cancelScheduled()
             }
           }}
           size={'sm'}
-          variant={autoMode ? 'default' : 'outline'}
+          variant={isAutoModeEnabled ? 'default' : 'outline'}
           className={
-            autoMode ? 'gap-2 bg-blue-600 hover:bg-blue-700' : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+            isAutoModeEnabled
+              ? 'gap-2 bg-blue-600 text-white hover:bg-blue-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
           }
         >
           <Zap className={'size-4'} />
-          {autoMode ? 'Auto AI' : 'Manual'}
+          {isAutoModeEnabled ? 'Auto AI' : 'Manual'}
         </Button>
 
-        {autoMode && isPending && remainingTime !== null && (
+        <Button
+          onClick={handleLinterToggle}
+          size={'sm'}
+          variant={isLinterEnabled ? 'default' : 'outline'}
+          className={
+            isLinterEnabled
+              ? 'gap-2 bg-emerald-600 text-white hover:bg-emerald-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
+          disabled={collaborationStatus !== 'connected'}
+        >
+          <Sparkles className={'size-4'} />
+          {isLinterEnabled ? 'Linter On' : 'Linter Off'}
+        </Button>
+
+        {isAutoModeEnabled && isPending && remainingTime !== null && (
           <span className={'animate-pulse rounded-md bg-blue-600/20 px-3 py-1.5 text-xs text-blue-400'}>
             {`AI in ${remainingTime}s...`}
           </span>
@@ -237,7 +264,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
             </EditorCommandList>
           </EditorCommand>
 
-          <GenerativeMenuSwitch open={openAI} onOpenChange={setOpenAI}>
+          <GenerativeMenuSwitch open={isGenerativeMenuOpen} onOpenChange={setIsGenerativeMenuOpen}>
             <Separator orientation={'vertical'} />
             <TextButtons />
             <Separator orientation={'vertical'} />

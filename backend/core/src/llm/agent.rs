@@ -46,6 +46,9 @@ pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
         return Ok(());
     }
 
+    // Log what replacements we got
+    tracing::info!("Received {} replacement suggestions: {:?}", replacements.len(), replacements);
+
     // Apply replacements to the document
     crate::editor::write::apply_replacements(doc, "content", &replacements)?;
 

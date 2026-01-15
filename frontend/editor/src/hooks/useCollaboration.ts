@@ -4,15 +4,17 @@ import * as Y from 'yjs'
 import { env } from '@/constants/env'
 
 // Interfaces
+type AiPayload = Record<string, unknown> | string | number | boolean | null
+
 interface AiCommandPayload {
   type: 'AI_COMMAND'
   action: string
-  payload?: Record<string, unknown>
+  payload?: AiPayload
 }
 
 interface UseCollaborationReturn {
   status: ConnectionStatus
-  runAiCommand: (action: string, payload?: Record<string, unknown>) => void
+  runAiCommand: (action: string, payload?: AiPayload) => void
 }
 
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
@@ -26,11 +28,9 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const runAiCommand = useCallback((action: string, payload?: Record<string, unknown>) => {
+  const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
-    const isWebSocketOpen = ws?.readyState === WebSocket.OPEN
-
-    if (!isWebSocketOpen || !ws) {
+    if (!ws || !isWebSocketOpen(ws)) {
       console.warn('Cannot send AI command: Socket not open')
       return
     }
@@ -47,10 +47,9 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
   useEffect(() => {
     const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
       const ws = wsRef.current
-      const isWebSocketOpen = ws?.readyState === WebSocket.OPEN
       const isLocalUpdate = origin !== 'websocket'
 
-      if (isWebSocketOpen && isLocalUpdate && ws) {
+      if (ws && isWebSocketOpen(ws) && isLocalUpdate) {
         ws.send(update)
       }
     }
@@ -142,4 +141,8 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
 // Helpers
 function buildWebSocketUrl(backendUrl: string): string {
   return backendUrl.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
+}
+
+function isWebSocketOpen(socket: WebSocket | null): boolean {
+  return socket?.readyState === WebSocket.OPEN
 }
