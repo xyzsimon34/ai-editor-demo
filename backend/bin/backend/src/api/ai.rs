@@ -1,5 +1,5 @@
 use crate::api::{errors::Error, state::AppState};
-use crate::model::{AgentTriggerRequest, AgentTriggerResponse, RefineRequest, RefineResponse};
+use crate::model::{RefineRequest, RefineResponse};
 use atb_ai_utils::agent::AgentContext;
 use atb_types::Uuid;
 use axum::{
@@ -7,7 +7,7 @@ use axum::{
     extract::{Json, State},
     routing::post,
 };
-use backend_core::llm::new_agent;
+use backend_core::llm::new_composer;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
@@ -27,8 +27,6 @@ pub fn routes() -> Router<AppState> {
         .route("/fix", post(fix_text_handler))
         .route("/longer", post(longer_text_handler))
         .route("/shorter", post(shorter_text_handler))
-        //  TODO: add agent API
-        .route("/agent/trigger", post(agent_trigger_handler))
 }
 
 // refine by single task
@@ -97,22 +95,4 @@ pub async fn shorter_text_handler(
         Box::pin(call_shorter_api(input, key))
     })
     .await
-}
-
-#[instrument(skip(state, req))]
-pub async fn agent_trigger_handler(
-    State(state): State<AppState>,
-    Json(req): Json<AgentTriggerRequest>,
-) -> Result<Json<AgentTriggerResponse>, Error> {
-    let role = req.role.unwrap_or_else(|| "writer".to_string());
-    let result = new_agent(&state.api_key, &role).await.map_err(|e| {
-        tracing::error!("Agent trigger failed: {:?}", e);
-        Error::InvalidInput(e.to_string())
-    })?;
-
-    Ok(Json(AgentTriggerResponse {
-        ok: true,
-        role: role,
-        result: Some(result),
-    }))
 }

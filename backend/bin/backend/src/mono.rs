@@ -59,68 +59,66 @@ pub async fn run(
         }
     });
 
-    // Spawn AI Agent with word-by-word writing
-    let ai_doc_for_writing = doc.clone();
-    let user_state = user_writing_state.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            tracing::info!("🤖 AI is writing...");
+    // tokio::spawn(async move {
+    //     loop {
+    //         tokio::time::sleep(Duration::from_secs(10)).await;
+    //         tracing::info!("🤖 AI is writing...");
 
-            // 先讀取當前文檔內容
-            let current_content = editor::get_doc_content(&ai_doc_for_writing);
+    //         // 先讀取當前文檔內容
+    //         let current_content = editor::get_doc_content(&ai_doc);
 
-            if !current_content.is_empty() {
-                tracing::info!("📄 Current document content: {}", current_content);
-            }
+    //         if !current_content.is_empty() {
+    //             tracing::info!("📄 Current document content: {}", current_content);
+    //         }
 
-            // 檢查文檔是否有內容結構
-            {
-                let xml_fragment = ai_doc_for_writing.get_or_insert_xml_fragment("content");
-                let txn = ai_doc_for_writing.transact();
-                let len = xml_fragment.len(&txn);
-                if len == 0 {
-                    tracing::info!("⏳ Waiting for user to create content first...");
-                    continue;
-                }
-            }
+    //         // 然後在同一個可寫事務中進行寫入操作
+    //         let xml_fragment = ai_doc.get_or_insert_xml_fragment("content");
+    //         let mut txn = ai_doc.transact_mut();
 
-            // 檢查用戶是否正在寫入
-            if !user_state.on_write() {
-                tracing::info!("⏸️  User is writing, skipping AI append");
-                continue;
-            }
+    //         // Wait for user to create content first (paragraph structure)
+    //         // Then append AI text to the last paragraph
+    //         let len = xml_fragment.len(&txn);
+    //         if len == 0 {
+    //             tracing::info!("⏳ Waiting for user to create content first...");
+    //             continue;
+    //         }
 
-            // 預先準備單詞列表（立即執行，不等待寫入時機）
-            let ai_text = " [AI was here] ";
-            let words = editor::prepare_words(ai_text);
+    //         // Get the last element (should be a paragraph)
+    //         let Some(last_elem) = xml_fragment.get(&txn, len - 1) else {
+    //             continue;
+    //         };
 
-            if words.is_empty() {
-                continue;
-            }
+    //         // Check if it's a paragraph element
+    //         let yrs::types::xml::XmlOut::Element(para) = last_elem else {
+    //             continue;
+    //         };
 
-            tracing::info!("📝 Prepared {} words for appending", words.len());
+    //         // Get the paragraph's tag name
+    //         if para.tag().as_ref() != "paragraph" {
+    //             continue;
+    //         }
 
-            // 逐字追加（帶用戶寫入檢測）
-            match editor::append_ai_content_word_by_word(
-                &ai_doc_for_writing,
-                words,
-                100, // 100ms delay between words
-                &user_state,
-            )
-            .await
-            {
-                Ok(()) => {
-                    tracing::info!("✅ AI finished appending words");
-                }
-                Err(e) => {
-                    tracing::warn!("❌ AI append failed: {:?}", e);
-                }
-            }
+    //         // Try to find a text node in the paragraph and append to it
+    //         let para_len = para.len(&txn);
+    //         if para_len == 0 {
+    //             tracing::info!("⚠️ Empty paragraph, would create text node");
+    //             continue;
+    //         }
 
-            // The observer above automatically catches this and updates the frontend!
-        }
-    });
+    //         // Check the last child - if it's text, append to it
+    //         let Some(yrs::types::xml::XmlOut::Text(text_ref)) = para.get(&txn, para_len - 1) else {
+    //             tracing::info!("⚠️ Last child is not text, would create new text node");
+    //             continue;
+    //         };
+
+    //         // Insert text at the end
+    //         let current_len = text_ref.len(&txn);
+    //         text_ref.insert(&mut txn, current_len, " [AI was here] ");
+    //         tracing::info!("✅ AI appended text!");
+
+    //         // The observer above automatically catches this and updates the frontend!
+    //     }
+    // });
 
     http::start_http(
         pg_pool,
