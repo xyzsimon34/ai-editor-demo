@@ -130,7 +130,9 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           <Button
             onClick={() => {
               if (runAiCommand) {
-                runAiCommand('AUTOCOMPLETE')
+                runAiCommand('AGENT', {
+                  role: 'researcher'
+                })
               } else {
                 console.error('runAiCommand is not defined!')
               }

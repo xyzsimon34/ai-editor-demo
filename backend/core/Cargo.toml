@@ -34,7 +34,6 @@ temporalio-sdk-core = { git = "https://github.com/temporalio/sdk-core", rev = "b
 reqwest.workspace = true
 futures.workspace = true
 atb-ai-utils.workspace = true
-yrs.workspace = true
 
 [features]
 default = []

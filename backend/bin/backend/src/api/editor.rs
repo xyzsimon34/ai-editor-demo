@@ -15,6 +15,8 @@ use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
 use backend_core::refiner::types::RefineInput;
+use backend_core::editor::get_doc_content;
+use backend_core::llm::new_composer;
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
 pub fn routes() -> axum::Router<AppState> {
@@ -78,7 +80,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 // LANE B: AI Commands
                 Message::Text(text) => {
+                    println!("Received command: {:?}", text);
                     if let Ok(cmd) = serde_json::from_str::<AiCommand>(&text) {
+                        println!("Command: {:?}", cmd);
                         // CLONE STATE FOR THE ASYNC TASK
                         // We spawn a new thread/task so we don't block the websocket heartbeat
                         let state_for_task = state.clone();
@@ -100,7 +104,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         return;
                                     };
                                     // Create the input struct your existing processor expects
-                                    let input = RefineInput { content: payload };
+                                    let input = RefineInput { content: payload.to_string() };
                                     let api_key = &state_for_task.api_key;
 
                                     // Select the correct function based on action
@@ -128,32 +132,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     tracing::info!("🤖 processing {}...", cmd_action);
                                     // 1. READ PHASE (Snapshot)
                                     // Extract the text from the server-side Y.js doc
-                                    let current_text = {
-                                        let txn = state_for_task.editor_doc.transact();
-                                        let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
-                                        // #TODO: Call Jordan's functions to extract text
-                                        "".to_string()
-
-                                    };
-
-                                    if current_text.trim().is_empty() {
-                                        return;
-                                    }
+                                    // let current_text = {
+                                    //     let txn = state_for_task.editor_doc.transact();
+                                    //     let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
+                                    //     // #TODO: Call Jordan's functions to extract text
+                                    //     get_doc_content(&state_for_task.editor_doc)
+                                    // };
 
                                     // 2. AI PROCESSING PHASE
                                     // Create the input struct your existing processor expects
-                                    let input = RefineInput { content: current_text };
                                     let api_key = &state_for_task.api_key;
 
                                     // Select the correct function based on action
                                     let result: Result<String, anyhow::Error> = match cmd_action.as_str() {
                                         "AGENT" => {
-                                            // Agent logic here
-                                            // If mutable from backend
-                                            // Call Jordan's functions to apply changes
-                                            // If immutable from backend
-                                            // delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", "Polishing your text...");
-                                            Ok("Agent executed successfully".to_string())
+                                            match new_composer(api_key, "composer", &state_for_task.editor_doc).await {
+                                                Ok(_) => Ok("Agent executed successfully".to_string()),
+                                                Err(e) => Err(anyhow::anyhow!("Agent failed: {:?}", e)),
+                                            }
                                         }
                                         _ => return, // Should be unreachable
                                     };

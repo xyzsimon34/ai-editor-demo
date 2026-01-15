@@ -1,5 +1,5 @@
 use crate::api::{errors::Error, state::AppState};
-use crate::model::{AgentTriggerRequest, AgentTriggerResponse, RefineRequest, RefineResponse};
+use crate::model::{RefineRequest, RefineResponse};
 use atb_ai_utils::agent::AgentContext;
 use atb_types::Uuid;
 use axum::{
@@ -8,7 +8,6 @@ use axum::{
     routing::post,
 };
 use backend_core::llm::new_composer;
-use backend_core::llm::new_linter;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };

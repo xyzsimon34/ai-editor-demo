@@ -57,6 +57,11 @@ pub enum MessageStructure {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AiCommand {
+    pub r#type: String,
     pub action: String,
-    pub payload: Option<String>,
+    pub payload: Option<serde_json::Value>,
+}
+
+pub struct AiCommandPayload {
+    pub role : String,
 }
