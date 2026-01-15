@@ -14,11 +14,7 @@ export async function createYjsExtension(yXmlFragment: Y.XmlFragment) {
     name: 'yjs',
 
     addProseMirrorPlugins() {
-      return [
-        ySyncPlugin(yXmlFragment),
-        yUndoPlugin(),
-      ]
-    },
+      return [ySyncPlugin(yXmlFragment), yUndoPlugin()]
+    }
   })
 }
-

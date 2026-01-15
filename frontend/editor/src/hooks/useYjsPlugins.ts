@@ -19,9 +19,5 @@ const loadYProsemirror = async () => {
  */
 export async function createYjsPlugins(yXmlFragment: Y.XmlFragment): Promise<any[]> {
   const { ySyncPlugin: ySync, yUndoPlugin: yUndo } = await loadYProsemirror()
-  return [
-    ySync(yXmlFragment),
-    yUndo(),
-  ]
+  return [ySync(yXmlFragment), yUndo()]
 }
-

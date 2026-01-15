@@ -5,8 +5,8 @@ import { ArrowUp } from 'lucide-react'
 import { addAIHighlight, useEditor } from 'novel'
 import Markdown from 'react-markdown'
 
-import { Command, CommandInput } from '@/components/base/Command'
 import { useAIGeneration } from '@/hooks/useAIGeneration'
+import { Command, CommandInput } from '@/components/base/Command'
 
 import { Button } from '../base/Button'
 import { ScrollArea } from '../base/ScrollArea'

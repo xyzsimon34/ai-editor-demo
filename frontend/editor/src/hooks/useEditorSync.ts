@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
-import { env } from '@/constants/env'
+import { useEffect, useRef, useState } from 'react'
 import type { EditorInstance } from 'novel'
+
+import { env } from '@/constants/env'
 
 export function useEditorSync(editor: EditorInstance | null) {
   const [status, setStatus] = useState<'disconnected' | 'connected' | 'connecting'>('disconnected')
@@ -78,4 +79,3 @@ export function useEditorSync(editor: EditorInstance | null) {
 
   return { status }
 }
-

@@ -1,7 +1,6 @@
+import type { AIOption } from '@/types/ai'
 import { ArrowDownWideNarrow, CheckCheck, RefreshCcwDot, StepForward, WrapText } from 'lucide-react'
 import { getPrevText, useEditor } from 'novel'
-
-import type { AIOption } from '@/types/ai'
 
 import { CommandGroup, CommandItem, CommandSeparator } from '../base/Command'
 

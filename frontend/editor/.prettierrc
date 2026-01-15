@@ -5,7 +5,7 @@
   "singleQuote": true,
   "tabWidth": 2,
   "trailingComma": "none",
-  "plugins": ["@ianvs/prettier-plugin-sort-imports"],
+  "plugins": ["@ianvs/prettier-plugin-sort-imports", "prettier-plugin-tailwindcss"],
   "importOrder": [
     "<BUILT_IN_MODULES>",
     "^(react/(.*)$)|^(react$)",

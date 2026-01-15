@@ -53,8 +53,8 @@ export async function POST(req: Request): Promise<Response> {
 
       default:
         return new Response(
-          JSON.stringify({ 
-            error: `Unknown option: ${option}. This API only supports 'continue' and 'zap'. For text refinement (improve/fix/longer/shorter), use backend API directly.` 
+          JSON.stringify({
+            error: `Unknown option: ${option}. This API only supports 'continue' and 'zap'. For text refinement (improve/fix/longer/shorter), use backend API directly.`
           }),
           {
             status: 400,
@@ -72,9 +72,9 @@ export async function POST(req: Request): Promise<Response> {
   } catch (error) {
     console.error('Error in generate API:', error)
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }),
       {
         status: 500,
         headers: { 'Content-Type': 'application/json' }

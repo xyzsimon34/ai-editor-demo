@@ -5,17 +5,22 @@ A lightweight, Notion-style AI text editor built on top of the Novel editor suit
 ## Installation Steps
 
 1. **Install Dependencies**
+
    ```bash
    yarn install
-   
+
+   ```
+
 2. **Set Up Environment Variables**
-   
+
    Create a `.env.local` file ：
+
    ```env
    OPENAI_API_KEY=your_openai_api_key_here
    ```
 
 3. **Start Development Server**
+
    ```bash
    yarn dev
    # 或
@@ -23,9 +28,8 @@ A lightweight, Notion-style AI text editor built on top of the Novel editor suit
    ```
 
 4. **Access the Application**
-   
-   http://localhost:3000
 
+   http://localhost:3000
 
 ## Notes
 

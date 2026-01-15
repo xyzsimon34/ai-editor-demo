@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
+
 import { env } from '@/constants/env'
 
 export function useYjsCollaboration(ydoc: Y.Doc) {
@@ -54,4 +55,3 @@ export function useYjsCollaboration(ydoc: Y.Doc) {
 
   return { status }
 }
-

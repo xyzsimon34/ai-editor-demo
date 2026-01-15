@@ -1,8 +1,6 @@
-import { useState, useCallback } from 'react'
-
-import type { Agent, PulseRequest, PulseResponse } from '@/types/ai'
-
+import { useCallback, useState } from 'react'
 import { getPulseSuggestions } from '@/services'
+import type { Agent, PulseRequest, PulseResponse } from '@/types/ai'
 
 interface UsePulseOptions {
   onSuccess?: (data: PulseResponse) => void
@@ -19,14 +17,14 @@ interface UsePulseReturn {
 
 /**
  * React hook for using the Pulse API (intelligent suggestion system)
- * 
+ *
  * @example
  * ```tsx
  * const { suggestions, isLoading, error, getPulse } = usePulse()
- * 
+ *
  * // Get suggestions from both agents
  * await getPulse('Your text here', ['researcher', 'refiner'])
- * 
+ *
  * // Access suggestions
  * if (suggestions) {
  *   console.log(suggestions.suggestions.researcher)
@@ -57,7 +55,7 @@ export function usePulse(options?: UsePulseOptions): UsePulseReturn {
       try {
         const request: PulseRequest = { text, agents }
         const response = await getPulseSuggestions(request)
-        
+
         setSuggestions(response)
         options?.onSuccess?.(response)
       } catch (err) {

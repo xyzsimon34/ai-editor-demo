@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
+import { Sparkles } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -25,6 +26,7 @@ import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
 import { useCollaboration } from '@/hooks/useCollaboration'
 
+import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
@@ -43,7 +45,7 @@ interface EditorProps {
 export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [ydoc] = useState(() => new Y.Doc())
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
-  
+
   const { status: collaborationStatus, runAiCommand } = useCollaboration(ydoc)
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
@@ -121,11 +123,11 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   return (
     <div className={'relative w-full'}>
       <div className={'mb-4 flex items-center justify-between gap-4 text-sm text-muted-foreground'}>
-        <div className={'flex items-center gap-2'}>
+        <div className={'flex items-center gap-3'}>
           <span className={collaborationStatus === 'connected' ? 'text-green-600' : 'text-red-600'}>
             {collaborationStatus === 'connected' ? '● Connected' : '○ Disconnected'}
           </span>
-          <button 
+          <Button
             onClick={() => {
               if (runAiCommand) {
                 runAiCommand('AUTOCOMPLETE')
@@ -134,9 +136,13 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
               }
             }}
             disabled={collaborationStatus !== 'connected'}
+            size={'sm'}
+            variant={'default'}
+            className={'gap-2'}
           >
-            Run AI Autocomplete
-          </button>
+            <Sparkles className={'size-4'} />
+            {'Run AI Autocomplete'}
+          </Button>
         </div>
         {charsCount !== undefined && charsCount > 0 && (
           <div className={'flex items-center gap-2'}>
