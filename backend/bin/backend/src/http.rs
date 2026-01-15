@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{editor, llm, sqlx_postgres, temporal};
+use backend_core::{editor, sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 pub async fn run(
