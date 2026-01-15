@@ -10,7 +10,6 @@ use std::{
 use tokio::sync::broadcast;
 use tokio::sync::watch;
 use yrs::Doc;
-
 // Doc 讀寫操作已移至 backend_core::editor 模組
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
 pub static LINTER_FLAG: AtomicBool = AtomicBool::new(true);
@@ -55,89 +54,64 @@ pub async fn run(
     // Store subscription outside if block to keep observer alive
     let _linter_subscription = if linter_enabled {
         let (notify_tx, mut notify_rx) = watch::channel(Instant::now());
-
         let tx_clone_for_observer = broadcast_tx.clone();
-        let notify_tx_for_obs = notify_tx.clone();
 
-        // Setup observer: send notification when document changes
+        // Observer: 當 notify_tx 隨 sub 一起被 drop 時，背景任務會自動停止
         let sub = doc.observe_update_v1(move |_txn, update_event| {
             let update = update_event.update.to_vec();
-            let _ = notify_tx_for_obs.send(Instant::now());
+            let _ = notify_tx.send(Instant::now());
             let _ = tx_clone_for_observer.send(MessageStructure::YjsUpdate(update));
         });
 
-        // Spawn linter task: keep notify_tx alive to prevent channel closure
         let api_key_for_task = opts.openai_api_key.clone();
         let doc_for_task = doc.clone();
-        let mut before_content = "".to_string();
+
         tokio::spawn(async move {
-            // Keep notify_tx alive in this task to prevent channel closure
-            // (observer has notify_tx_for_obs, but we keep the original to ensure channel stays open)
-            let _notify_tx_keep_alive = notify_tx;
             tracing::info!("🚀 Smart Auto-linter started (Debounce: 5s)");
+            let mut before_content = String::new();
 
+            // 核心邏輯：等待變動 -> 觸發 5 秒冷卻 -> 執行
             loop {
-                // A. 等待文檔發生變動 (這會掛起任務直到收到 notify_tx 的信號)
-                tracing::debug!("⏳ Waiting for document change...");
                 if notify_rx.changed().await.is_err() {
-                    tracing::info!("🔌 Watch channel closed, exiting linter task");
-                    break; // 通道關閉，退出任務
+                    break;
                 }
-                tracing::debug!("📝 Document change detected, entering debounce logic");
 
-                // B. 進入「防抖計時」邏輯
                 loop {
-                    // 建立一個 5 秒的定時器
-                    let delay = tokio::time::sleep(Duration::from_secs(5));
+                    let delay = tokio::time::sleep(std::time::Duration::from_secs(5));
                     tokio::pin!(delay);
 
                     tokio::select! {
-                        // 如果在 5 秒內 notify_rx 又變動了（使用者還在打字）
-                        _ = notify_rx.changed() => {
-                            tracing::debug!("⌨️ User is still writing, resetting 5s timer...");
-                            // 繼續內層 loop，導致 delay 被重新建立（即重設計時器）
+                        changed = notify_rx.changed() => {
+                            if changed.is_err() { return; }
+                            tracing::debug!("⌨️ User still typing, resetting timer...");
                             continue;
                         }
-                        // 如果 5 秒內都沒有新變動，計時器到期
                         _ = &mut delay => {
-                            tracing::info!("⏱️ Quiet period (5s) reached, preparing AI check...");
-                            // 跳出內層 loop，執行下方的 AI 邏輯
                             break;
                         }
                     }
                 }
 
-                // C. 執行 AI Linter 邏輯
                 let current_content = editor::get_doc_content(&doc_for_task);
-                tracing::debug!(
-                    "📄 Current content length: {}, before_content length: {}",
-                    current_content.len(),
-                    before_content.len()
-                );
-
-                // 內容沒變或是空的就不呼叫 API
                 if current_content.is_empty() || current_content == before_content {
-                    tracing::info!("🔍 Content unchanged or empty, skipping AI.");
                     continue;
                 }
 
                 tracing::info!("🤖 Calling AI Linter...");
                 match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
                     Ok(_) => {
-                        tracing::info!("✅ AI check successful");
                         before_content = current_content;
+                        tracing::info!("✅ AI check successful");
                     }
-                    Err(e) => {
-                        tracing::error!("❌ AI check failed: {:?}", e);
-                    }
+                    Err(e) => tracing::error!("❌ AI check failed: {:?}", e),
                 }
             }
+            tracing::info!("🔌 Linter task exiting");
         });
 
-        Some(sub) // Return subscription to keep observer alive
+        Some(sub)
     } else {
-        tracing::info!("🔍 Linter is disabled, skipping AI.");
-        None // No subscription when linter is disabled
+        None
     };
 
     // tokio::spawn(async move {
