@@ -1,4 +1,4 @@
-use crate::api::state::{AppState, MessageStructure};
+use crate::api::state::{AppState, MessageStructure, AiCommand};
 
 use axum::{
     extract::{
@@ -68,14 +68,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
-            if let Message::Binary(data) = msg {
-                // Client typed something -> Update Server Doc
-                let mut txn = state_clone.editor_doc.transact_mut();
-                if let Ok(update) = Update::decode_v1(&data) {
-                    if let Err(e) = txn.apply_update(update) {
-                        tracing::warn!("Failed to apply update: {:?}", e);
+            match msg {
+                // LANE A: Binary Sync (Existing)
+                Message::Binary(data) => {
+                    let mut txn = state_clone.editor_doc.transact_mut();
+                    if let Ok(update) = Update::decode_v1(&data) {
+                        if let Err(e) = txn.apply_update(update) {
+                            tracing::warn!("Failed to apply update: {:?}", e);
+                        }
                     }
                 }
+                
+                // LANE B: AI Commands (New)
+                Message::Text(text) => {
+                    if let Ok(cmd) = serde_json::from_str::<AiCommand>(&text) {
+                        if cmd.action == "AUTOCOMPLETE" {
+                            tracing::info!("🤖 Running AI autocomplete...");
+                            // CALL AUTOCOMPLETE LOGIC HERE
+                            // backend_core::helper_utils::xml::format_all_occurrences(&state_clone.editor_doc, "content", "AI", "bold", true);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     });

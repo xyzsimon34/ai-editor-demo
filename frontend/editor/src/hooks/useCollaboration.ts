@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import * as Y from 'yjs'
 import { env } from '@/constants/env'
 
@@ -7,6 +7,21 @@ export function useCollaboration(ydoc: Y.Doc) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Trigger an AI command to the backend
+  // Defined outside useEffect so it can be returned and used by other components
+  const runAiCommand = useCallback((action: string, payload?: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify({
+        type: 'AI_COMMAND',
+        action: action,
+        payload: payload
+      })
+      wsRef.current.send(message)
+    } else {
+      console.warn("Cannot send AI command: Socket not open")
+    }
+  }, [])
+
   useEffect(() => {
     // Capture User Typing -> Send to Backend
     const updateHandler = (update: Uint8Array, origin: any) => {
@@ -14,6 +29,7 @@ export function useCollaboration(ydoc: Y.Doc) {
         wsRef.current.send(update)
       }
     }
+    
 
     const connect = () => {
       const wsUrl = env.BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
@@ -90,6 +106,6 @@ export function useCollaboration(ydoc: Y.Doc) {
     }
   }, [ydoc])
 
-  return { status }
+  return { status, runAiCommand }
 }
 

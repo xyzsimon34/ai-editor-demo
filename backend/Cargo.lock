@@ -645,6 +645,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "yrs",
 ]
 
 [[package]]
@@ -6134,9 +6135,9 @@ dependencies = [
 
 [[package]]
 name = "yrs"
-version = "0.21.3"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81de5913bca29f43a1d12ca92a7b39a2945e9420e01602a7563917c7bfc60f70"
+checksum = "f6893d39bc55d014e4a1d0e71d06c0c41590d5cdeac35c126be44998bc320cff"
 dependencies = [
  "arc-swap",
  "async-lock",
@@ -6147,7 +6148,7 @@ dependencies = [
  "serde_json",
  "smallstr",
  "smallvec",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

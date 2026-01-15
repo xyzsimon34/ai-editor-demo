@@ -45,7 +45,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
   
   // 2. Setup WebSocket collaboration
-  const { status: collaborationStatus } = useCollaboration(ydoc)
+  const { status: collaborationStatus, runAiCommand } = useCollaboration(ydoc)
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
   const [_saveStatus, setSaveStatus] = useState('Saved')
@@ -107,6 +107,18 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           <span className={collaborationStatus === 'connected' ? 'text-green-600' : 'text-red-600'}>
             {collaborationStatus === 'connected' ? '● Connected' : '○ Disconnected'}
           </span>
+          <button 
+            onClick={() => {
+              if (runAiCommand) {
+                runAiCommand('AUTOCOMPLETE')
+              } else {
+                console.error('runAiCommand is not defined!')
+              }
+            }}
+            disabled={collaborationStatus !== 'connected'}
+          >
+            Run AI Autocomplete
+          </button>
         </div>
         {charsCount !== undefined && charsCount > 0 && (
           <div className={'flex items-center gap-2'}>
