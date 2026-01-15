@@ -33,9 +33,13 @@ impl UserWritingState {
         }
     }
 
-    /// 檢查是否可以進行 AI 寫入
-    pub fn on_write(&self) -> bool {
-        !self.user_writing_flag.load(Ordering::Relaxed)
+    /// 檢查用戶是否正在寫入
+    ///
+    /// # Returns
+    /// `true` 如果用戶正在寫入，AI 應該暫停
+    /// `false` 如果用戶未在寫入，AI 可以繼續
+    pub fn is_user_writing(&self) -> bool {
+        self.user_writing_flag.load(Ordering::Relaxed)
     }
 
     /// 標記用戶開始寫入
@@ -204,7 +208,7 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
 /// `Err` 如果發生錯誤
 ///
 /// # Behavior
-/// - 每次追加前檢查 `user_state.on_write()`
+/// - 每次追加前檢查 `user_state.is_user_writing()`
 /// - 如果用戶開始寫入，立即返回 `Ok(())`，拋棄剩餘單詞
 /// - 不保留任何狀態，每次調用都是獨立的
 pub async fn append_ai_content_word_by_word(
@@ -218,7 +222,7 @@ pub async fn append_ai_content_word_by_word(
     }
 
     // 在開始前檢查一次
-    if !user_state.on_write() {
+    if user_state.is_user_writing() {
         tracing::info!("User is writing, skipping AI append");
         return Ok(()); // 直接拋棄所有單詞
     }
@@ -226,7 +230,7 @@ pub async fn append_ai_content_word_by_word(
     // 遍歷預處理的單詞列表
     for word in words {
         // 每次追加前再次檢查用戶是否開始寫入
-        if !user_state.on_write() {
+        if user_state.is_user_writing() {
             tracing::info!(
                 "User started writing, stopping AI append and discarding remaining words"
             );
