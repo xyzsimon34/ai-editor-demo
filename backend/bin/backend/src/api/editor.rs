@@ -15,7 +15,6 @@ use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
 use backend_core::refiner::types::RefineInput;
-use backend_core::editor::get_doc_content;
 use backend_core::llm::new_composer;
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
@@ -59,7 +58,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 MessageStructure::AiCommand(json_string) => Message::Text(json_string.into()),
             };
 
-            if let Err(e) = sender.send(ws_msg).await {
+            if sender.send(ws_msg).await.is_err() {
                 break;
             }
         }
@@ -87,6 +86,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         // We spawn a new thread/task so we don't block the websocket heartbeat
                         let state_for_task = state.clone();
                         let cmd_action = cmd.action.clone();
+                        let cmd_payload = cmd.payload.clone();
                         let _ = state_for_task.editor_broadcast_tx.send(
                             MessageStructure::AiCommand(serde_json::json!({
                                 "type": "AI_STATUS",
@@ -98,7 +98,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
-                                    let Some(payload) = cmd.payload else {
+                                    let Some(payload) = cmd_payload else {
                                         tracing::error!("No payload found for command: {:?}", cmd_action);
                                         delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
                                         return;
@@ -119,12 +119,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", format!("Applied {}", cmd.action).as_str());
-                                            delegate_to_frontend(&state_for_task, "AI_RESULT", "complete", output.content.as_str());
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", &format!("Applied {}", cmd_action));
+                                            delegate_to_frontend(&state_for_task, "AI_RESULT", "complete", &output.content);
                                         }
                                         Err(e) => {
                                             tracing::error!("❌ AI failed: {:?}", e);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", format!("AI failed: {:?}", e).as_str());
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &format!("AI failed: {:?}", e));
                                         }
                                     }
                                 }
@@ -156,17 +156,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
-                                        Ok(output) => {
-                                            let mut txn = state_for_task.editor_doc.transact_mut();
-                                            let root = state_for_task.editor_doc.get_or_insert_xml_fragment("content");
-                                            
-                                            // #TODO: Call Jordan's functions to apply paragraph content
-                                            
+                                        Ok(_output) => {
+                                            // The agent modifies the doc directly via new_composer
                                             tracing::info!("✅ Applied AI changes via CRDT");
                                         }
                                         Err(e) => {
                                             tracing::error!("❌ AI failed: {:?}", e);
-                                            // Optional: Send a specific error message back to client via Lane B
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &format!("AI failed: {:?}", e));
                                         }
                                     }
                                 }
