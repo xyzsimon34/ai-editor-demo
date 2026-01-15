@@ -19,16 +19,3 @@ pub struct RefineRequest {
 pub struct RefineResponse {
     pub text: String,
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AgentTriggerRequest {
-    #[serde(default)]
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AgentTriggerResponse {
-    pub ok: bool,
-    pub role: String,
-    pub result: Option<String>,
-}
