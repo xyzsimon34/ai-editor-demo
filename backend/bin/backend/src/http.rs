@@ -5,10 +5,9 @@ use std::{sync::Arc, time::Duration};
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{editor, sqlx_postgres, temporal};
+use backend_core::{editor, llm, sqlx_postgres, temporal};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
-
 pub async fn run(
     db_opts: DatabaseOpts,
     http_opts: HttpOpts,
@@ -27,6 +26,13 @@ pub async fn run(
     // Create minimal editor state for Http mode (not used, but required by AppState)
     let doc = std::sync::Arc::new(yrs::Doc::new());
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
+
+    // Setup Observer: When Yrs changes, broadcast the delta
+    let tx_clone = broadcast_tx.clone();
+    let _sub = doc.observe_update_v1(move |_txn, update_event| {
+        let update = update_event.update.to_vec();
+        let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
+    });
 
     start_http(
         pg_pool,
