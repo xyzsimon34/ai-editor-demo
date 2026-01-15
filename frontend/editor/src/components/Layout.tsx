@@ -7,11 +7,8 @@ import { cn } from '@/lib/utils'
 
 export const Header = ({
   className,
-  children,
-  saveStatus = 'Saved'
-}: { children?: ReactNode; saveStatus?: string } & HTMLAttributes<HTMLElement>) => {
-  const isSaved = saveStatus === 'Saved'
-
+  children
+}: { children?: ReactNode } & HTMLAttributes<HTMLElement>) => {
   return (
     <header
       className={cn(
@@ -25,13 +22,7 @@ export const Header = ({
           <h1 className={'text-xl font-semibold text-zinc-100'}>{'AI Editor'}</h1>
         </div>
 
-        <div className={'flex items-center gap-4'}>
-          <div className={'flex items-center gap-2 text-sm text-zinc-400'}>
-            <div className={cn('size-2 rounded-full', isSaved ? 'bg-green-500' : 'bg-amber-500')} />
-            <span className={'hidden sm:inline'}>{saveStatus}</span>
-          </div>
-          {children}
-        </div>
+        {children && <div className={'flex items-center gap-4'}>{children}</div>}
       </nav>
     </header>
   )

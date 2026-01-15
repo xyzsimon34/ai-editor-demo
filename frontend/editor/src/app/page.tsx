@@ -10,7 +10,7 @@ export default function Home() {
 
   return (
     <div className={'flex min-h-screen flex-col bg-zinc-950'}>
-      <Header saveStatus={saveStatus} />
+      <Header />
       <main className={'flex-1'}>
         <Editor onSaveStatusChange={setSaveStatus} />
       </main>

@@ -139,15 +139,17 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   if (!initialContent || !yjsExtension) return null
 
   return (
-    <div className={'relative w-full min-h-screen bg-zinc-900'}>
-      <div className={'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'}>
+    <div className={'relative min-h-screen w-full bg-zinc-900'}>
+      <div
+        className={
+          'fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'
+        }
+      >
         <span className={collaborationStatus === 'connected' ? 'text-green-500' : 'text-amber-500'}>
           {collaborationStatus === 'connected' ? '●' : '◐'}
         </span>
         <span className={'text-zinc-400'}>{saveStatus}</span>
-        {charsCount !== undefined && charsCount > 0 && (
-          <span className={'text-zinc-500'}>{charsCount} characters</span>
-        )}
+        {charsCount !== undefined && charsCount > 0 && <span className={'text-zinc-500'}>{charsCount} characters</span>}
       </div>
 
       <div className={'fixed bottom-6 left-6 z-50 flex items-center gap-3'}>
@@ -160,7 +162,9 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           }}
           size={'sm'}
           variant={autoMode ? 'default' : 'outline'}
-          className={autoMode ? 'gap-2 bg-blue-600 hover:bg-blue-700' : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'}
+          className={
+            autoMode ? 'gap-2 bg-blue-600 hover:bg-blue-700' : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
         >
           <Zap className={'size-4'} />
           {autoMode ? 'Auto AI' : 'Manual'}
@@ -215,7 +219,9 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
                   key={item.title}
                 >
                   <div
-                    className={'flex size-10 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-400'}
+                    className={
+                      'flex size-10 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-400'
+                    }
                   >
                     {item.icon}
                   </div>
