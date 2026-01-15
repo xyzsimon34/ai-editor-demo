@@ -365,7 +365,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         }
                                     };
                                     match content.as_str() {
-                                        "LINT" => {
+                                        "LINTER" => {
                                             tracing::info!("🤖 toggling linter...");
                                             crate::mono::LINTER_FLAG.store(!crate::mono::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
                                         }
