@@ -10,6 +10,7 @@ use yrs::Doc;
 // Doc 讀寫操作已移至 backend_core::editor 模組
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
 pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
+pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(true);
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -63,19 +64,21 @@ pub async fn run(
             // 先讀取當前文檔內容
             let current_content = editor::get_doc_content(&doc_for_task);
 
-            // if !current_content.is_empty() {
-            //     tracing::info!("📄 Current document content: {}", current_content);
-            // }
-
-            if before_content == current_content {
-                tracing::info!("🔍 Doc is not changed, skipping linter check");
+            if current_content.is_empty() {
+                tracing::info!("🔍 Doc is empty, skipping checks");
                 continue;
             }
 
-            tracing::info!("🔍 AI is checking for grammar and vocabulary...");
+            if before_content == current_content {
+                tracing::info!("🔍 Doc is not changed, skipping checks");
+                continue;
+            }
+
 
             // Load the flag atomically (thread-safe, no unsafe block needed)
             if LINTER_FLAG.load(Ordering::Relaxed) {
+
+                tracing::info!("🔍 AI is checking for grammar and vocabulary...");
                 match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
                     Ok(_) => {
                         tracing::info!("✅ AI checked for grammar and vocabulary successfully");
@@ -86,6 +89,20 @@ pub async fn run(
                 }
             } else {
                 tracing::debug!("Linter is disabled, skipping check");
+            }
+
+            if EMOJI_REPLACER_FLAG.load(Ordering::Relaxed) {
+                tracing::info!("🔍 AI is suggesting emoji replacements...");
+                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await {
+                    Ok(_) => {
+                        tracing::info!("✅ AI applied emoji replacements successfully");
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ AI failed to apply emoji replacements: {:?}", e);
+                    }
+                }
+            } else {
+                tracing::debug!("Emoji replacer is disabled, skipping check");
             }
 
             before_content = current_content;

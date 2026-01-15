@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use yrs::{Doc, Text, Transact, XmlFragment};
+use yrs::{Doc, GetString, Text, Transact, XmlFragment};
 
 // ============================================================================
 // User Writing Detection Context
@@ -247,6 +247,113 @@ pub async fn append_ai_content_word_by_word(
     }
 
     Ok(())
+}
+
+/// Apply text replacements to all text nodes in the document
+///
+/// This function traverses the XML fragment, finds all text nodes,
+/// and applies the given replacements to each text node.
+///
+/// # Arguments
+/// * `doc` - Shared Yrs Doc instance
+/// * `field_name` - Field name of the XML fragment (usually "content")
+/// * `replacements` - Vector of replacement rules
+///
+/// # Returns
+/// `Ok(())` if successful, `Err` if failed
+pub fn apply_replacements(
+    doc: &Arc<Doc>,
+    field_name: &str,
+    replacements: &[crate::llm::tools::emoji_replacer::Replacement],
+) -> Result<()> {
+    if replacements.is_empty() {
+        return Ok(());
+    }
+
+    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
+    
+    // Collect all text node references (immutable borrow first)
+    let mut text_nodes = Vec::new();
+    {
+        let read_txn = doc.transact();
+        collect_text_nodes(&read_txn, &xml_fragment, &mut text_nodes);
+    }
+
+    // Apply replacements to each text node (mutable operations)
+    let mut txn = doc.transact_mut();
+    for text_ref in text_nodes {
+        let current_text = text_ref.get_string(&txn);
+        let mut new_text = current_text.clone();
+        
+        // Apply all replacements
+        for replacement in replacements {
+            if !replacement.replace.is_empty() {
+                new_text = new_text.replace(&replacement.replace, &replacement.with);
+            }
+        }
+        
+        // Only update if text changed
+        if new_text != current_text {
+            let len = text_ref.len(&txn);
+            if len > 0 {
+                // Remove all existing text
+                text_ref.remove_range(&mut txn, 0, len);
+            }
+            // Insert new text
+            text_ref.insert(&mut txn, 0, &new_text);
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper: Recursively find all XmlTextRef nodes in a fragment
+fn collect_text_nodes(
+    txn: &yrs::Transaction,
+    fragment: &yrs::XmlFragmentRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+    
+    let len = fragment.len(txn);
+    for i in 0..len {
+        if let Some(child) = fragment.get(txn, i) {
+            match child {
+                XmlOut::Element(elem) => {
+                    // Recurse into element
+                    collect_text_nodes_from_elem(txn, &elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Helper: Recursively find all XmlTextRef nodes in an element
+fn collect_text_nodes_from_elem(
+    txn: &yrs::Transaction,
+    elem: &yrs::XmlElementRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+    
+    let len = elem.len(txn);
+    for i in 0..len {
+        if let Some(child) = elem.get(txn, i) {
+            match child {
+                XmlOut::Element(child_elem) => {
+                    collect_text_nodes_from_elem(txn, &child_elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]

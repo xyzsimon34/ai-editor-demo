@@ -27,3 +27,28 @@ pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
     let (_result, _updated_doc) = linter::execute_tool(doc, api_key).await?;
     Ok(())
 }
+
+pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
+    // Extract plain text from document
+    let content = crate::editor::get_doc_content(doc);
+    
+    if content.trim().is_empty() {
+        return Ok(()); // Skip if no content
+    }
+
+    // Get replacement suggestions from AI
+    let replacements = crate::llm::tools::emoji_replacer::execute_tool(&content, api_key)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to execute emoji replacer tool: {}", e))?;
+
+    if replacements.is_empty() {
+        tracing::debug!("No emoji replacements suggested");
+        return Ok(());
+    }
+
+    // Apply replacements to the document
+    crate::editor::write::apply_replacements(doc, "content", &replacements)?;
+
+    tracing::info!("✅ Applied {} emoji replacements", replacements.len());
+    Ok(())
+}
