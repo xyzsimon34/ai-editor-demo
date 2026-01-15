@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 
 import type { Agent, PulseRequest, PulseResponse } from '@/types/ai'
 
-import { getPulseSuggestions } from '@/services/ai'
+import { getPulseSuggestions } from '@/services'
 
 interface UsePulseOptions {
   onSuccess?: (data: PulseResponse) => void
