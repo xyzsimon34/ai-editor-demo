@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 
+import Editor from '@/components/editor'
 import { Header } from '@/components/Layout'
-import Editor from '@/components/Editor'
 
 export default function Home() {
   const [saveStatus, setSaveStatus] = useState('Saved')

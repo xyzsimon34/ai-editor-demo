@@ -2,6 +2,7 @@ import { BoldIcon, CodeIcon, ItalicIcon, StrikethroughIcon, UnderlineIcon } from
 import { EditorBubbleItem, useEditor, type EditorInstance } from 'novel'
 
 import { cn } from '@/lib/utils'
+
 import { Button } from './Button'
 
 type SelectorItem = {

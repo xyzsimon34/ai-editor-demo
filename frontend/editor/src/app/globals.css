@@ -94,3 +94,15 @@
     scroll-padding-top: 64px;
   }
 }
+
+@layer components {
+  .ai-highlight {
+    @apply rounded-sm px-0.5;
+    background-color: #fef08a;
+    transition: background-color 0.3s ease;
+  }
+
+  .dark .ai-highlight {
+    background-color: #854d0e;
+  }
+}

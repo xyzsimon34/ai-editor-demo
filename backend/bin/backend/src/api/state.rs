@@ -5,6 +5,7 @@ use crate::{
 
 use axum::extract::FromRef;
 use backend_core::temporal::WorkflowEngine;
+use serde::Deserialize;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -52,4 +53,10 @@ pub enum MessageStructure {
     YjsUpdate(Vec<u8>), 
     // Lane B: A JSON string for UI commands (Comments, Toasts, etc)
     AiCommand(String),
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AiCommand {
+    pub action: String,
+    pub payload: Option<String>,
 }

@@ -1,56 +1,110 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
+
 import { env } from '@/constants/env'
 
-export function useCollaboration(ydoc: Y.Doc) {
-  const [status, setStatus] = useState<'disconnected' | 'connected' | 'connecting'>('disconnected')
+// Interfaces
+interface AiCommandPayload {
+  type: 'AI_COMMAND'
+  action: string
+  payload?: Record<string, unknown>
+}
+
+interface UseCollaborationReturn {
+  status: ConnectionStatus
+  runAiCommand: (action: string, payload?: Record<string, unknown>) => void
+}
+
+type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
+
+// Constants
+const RECONNECT_DELAY_MS = 3000
+const CLEAN_CLOSE_CODE = 1000
+
+export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
+  const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const runAiCommand = useCallback((action: string, payload?: Record<string, unknown>) => {
+    const ws = wsRef.current
+    const isWebSocketOpen = ws?.readyState === WebSocket.OPEN
+
+    if (!isWebSocketOpen || !ws) {
+      console.warn('Cannot send AI command: Socket not open')
+      return
+    }
+
+    const message: AiCommandPayload = {
+      type: 'AI_COMMAND',
+      action,
+      payload
+    }
+
+    ws.send(JSON.stringify(message))
+  }, [])
+
   useEffect(() => {
-    // Capture User Typing -> Send to Backend
-    const updateHandler = (update: Uint8Array, origin: any) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN && origin !== 'websocket') {
-        wsRef.current.send(update)
+    const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
+      const ws = wsRef.current
+      const isWebSocketOpen = ws?.readyState === WebSocket.OPEN
+      const isLocalUpdate = origin !== 'websocket'
+
+      if (isWebSocketOpen && isLocalUpdate && ws) {
+        ws.send(update)
       }
     }
 
+    const clearReconnectTimeout = () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+    }
+
+    const scheduleReconnect = (connect: () => void) => {
+      // eslint-disable-next-line no-console
+      console.log(`Attempting to reconnect in ${RECONNECT_DELAY_MS / 1000} seconds...`)
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null
+        connect()
+      }, RECONNECT_DELAY_MS)
+    }
+
     const connect = () => {
-      const wsUrl = env.BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
+      const wsUrl = buildWebSocketUrl(env.BACKEND_URL)
+      // eslint-disable-next-line no-console
       console.log('Connecting to WebSocket:', wsUrl)
       setStatus('connecting')
-      
+
       const ws = new WebSocket(wsUrl)
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws
 
       ws.onopen = () => {
+        // eslint-disable-next-line no-console
         console.log('WebSocket connected successfully')
         setStatus('connected')
-        // Clear any pending reconnect
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current)
-          reconnectTimeoutRef.current = null
-        }
+        clearReconnectTimeout()
       }
 
       ws.onclose = (event) => {
+        // eslint-disable-next-line no-console
         console.log('WebSocket closed:', event.code, event.reason || 'No reason')
         setStatus('disconnected')
-        
-        // Only reconnect if it wasn't a clean close (code 1000)
-        if (event.code !== 1000 && !reconnectTimeoutRef.current) {
-          console.log('Attempting to reconnect in 3 seconds...')
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectTimeoutRef.current = null
-            connect()
-          }, 3000)
+
+        const isCleanClose = event.code === CLEAN_CLOSE_CODE
+        const hasNoScheduledReconnect = !reconnectTimeoutRef.current
+
+        if (!isCleanClose && hasNoScheduledReconnect) {
+          scheduleReconnect(connect)
         }
       }
 
       ws.onerror = (error) => {
+        // eslint-disable-next-line no-console
         console.error('WebSocket error:', error)
-        // Error details are usually in the Event, not the error parameter
+        // eslint-disable-next-line no-console
         console.error('WebSocket failed to connect. Is the backend running on', env.BACKEND_URL, '?')
         setStatus('disconnected')
       }
@@ -58,38 +112,34 @@ export function useCollaboration(ydoc: Y.Doc) {
       ws.onmessage = (event) => {
         const data = event.data
 
-        // LANE A: Binary Sync (Y.js Update)
         if (data instanceof ArrayBuffer) {
-          // Apply the update from Backend to our local Yjs Doc
           Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
-        }
-        // LANE B: AI Commands (Text/JSON)
-        else if (typeof data === 'string') {
+        } else if (typeof data === 'string') {
+          // eslint-disable-next-line no-console
           console.log('Received AI Command (string):', data)
-        }
-        else {
-          // Debug: log what we actually received
+        } else {
+          // eslint-disable-next-line no-console
           console.log('Received unknown message type:', typeof data, data)
         }
       }
     }
 
-    // Subscribe to local Yjs changes
-    ydoc.on('update', updateHandler)
-
+    ydoc.on('update', handleYjsUpdate)
     connect()
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
+      clearReconnectTimeout()
       if (wsRef.current) {
         wsRef.current.close()
       }
-      ydoc.off('update', updateHandler)
+      ydoc.off('update', handleYjsUpdate)
     }
   }, [ydoc])
 
-  return { status }
+  return { status, runAiCommand }
 }
 
+// Helpers
+function buildWebSocketUrl(backendUrl: string): string {
+  return backendUrl.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
+}

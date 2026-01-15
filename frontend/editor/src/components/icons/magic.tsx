@@ -1,7 +1,7 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles } from 'lucide-react'
 
 const Magic = ({ className }: { className?: string }) => {
-  return <Sparkles className={className} />;
-};
+  return <Sparkles className={className} />
+}
 
-export default Magic;
+export default Magic
