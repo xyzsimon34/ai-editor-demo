@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Zap } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -24,13 +24,13 @@ import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
+import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
 import { useCollaboration } from '@/hooks/useCollaboration'
 
 import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
-// import { PulseSidebar } from './pulse-sidebar'
 import { slashCommand, suggestionItems } from './slash-command'
 
 const defaultEditorContent: JSONContent = {
@@ -49,18 +49,12 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const { status: collaborationStatus, runAiCommand } = useCollaboration(ydoc)
 
   const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
-  const [_saveStatus, setSaveStatus] = useState('Saved')
+  const [saveStatus, setSaveStatus] = useState('Saved')
   const [charsCount, setCharsCount] = useState<number>()
-  // const [editorText, setEditorText] = useState('')
   const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
-
-  const [_openNode, _setOpenNode] = useState(false)
-  const [_openColor, _setOpenColor] = useState(false)
-  const [_openLink, _setOpenLink] = useState(false)
   const [openAI, setOpenAI] = useState(false)
-  // const [sidebarOpen, setSidebarOpen] = useState(false)
-
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
+  const [autoMode, setAutoMode] = useState(false)
 
   useEffect(() => {
     createYjsExtension(yXmlFragment).then(setYjsExtension)
@@ -73,19 +67,35 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     slashCommand
   ]
 
+  const handleAITrigger = () => {
+    if (runAiCommand && collaborationStatus === 'connected') {
+      runAiCommand('AGENT', { role: 'researcher' })
+    }
+  }
+
+  const { scheduleAITrigger, cancelScheduled, isPending, remainingTime } = useAutoAITrigger(editorInstance, {
+    enabled: autoMode,
+    debounceMs: 3000,
+    minCharacters: 10,
+    minChangeThreshold: 10,
+    cooldownMs: 30000,
+    onTrigger: handleAITrigger
+  })
+
   const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
     const json = editor.getJSON()
     const charCount = editor.storage.characterCount.characters()
     setCharsCount(charCount > 0 ? charCount : undefined)
-
-    // const text = editor.getText()
-    // setEditorText(text)
 
     window.localStorage.setItem('novel-content', JSON.stringify(json))
     window.localStorage.setItem('markdown', editor.storage.markdown.getMarkdown())
     const newStatus = 'Saved'
     setSaveStatus(newStatus)
     onSaveStatusChange?.(newStatus)
+
+    if (autoMode) {
+      scheduleAITrigger()
+    }
   }, 500)
 
   useEffect(() => {
@@ -118,50 +128,56 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     }
   }, [ydoc, editorInstance, yjsExtension])
 
+  useEffect(() => {
+    if (editorInstance && yjsExtension) {
+      setTimeout(() => {
+        editorInstance.commands.focus('end')
+      }, 100)
+    }
+  }, [editorInstance, yjsExtension])
+
   if (!initialContent || !yjsExtension) return null
 
   return (
-    <div className={'relative w-full'}>
-      <div className={'mb-4 flex items-center justify-between gap-4 text-sm text-muted-foreground'}>
-        <div className={'flex items-center gap-3'}>
-          <span className={collaborationStatus === 'connected' ? 'text-green-600' : 'text-red-600'}>
-            {collaborationStatus === 'connected' ? '● Connected' : '○ Disconnected'}
-          </span>
-          <Button
-            onClick={() => {
-              if (runAiCommand) {
-                runAiCommand('AGENT', {
-                  role: 'researcher'
-                })
-              } else {
-                console.error('runAiCommand is not defined!')
-              }
-            }}
-            disabled={collaborationStatus !== 'connected'}
-            size={'sm'}
-            variant={'default'}
-            className={'gap-2'}
-          >
-            <Sparkles className={'size-4'} />
-            {'Run AI Autocomplete'}
-          </Button>
-        </div>
+    <div className={'relative w-full min-h-screen bg-zinc-900'}>
+      <div className={'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'}>
+        <span className={collaborationStatus === 'connected' ? 'text-green-500' : 'text-amber-500'}>
+          {collaborationStatus === 'connected' ? '●' : '◐'}
+        </span>
+        <span className={'text-zinc-400'}>{saveStatus}</span>
         {charsCount !== undefined && charsCount > 0 && (
-          <div className={'flex items-center gap-2'}>
-            <span>
-              {charsCount}
-              {' characters'}
-            </span>
-          </div>
+          <span className={'text-zinc-500'}>{charsCount} characters</span>
         )}
       </div>
+
+      <div className={'fixed bottom-6 left-6 z-50 flex items-center gap-3'}>
+        <Button
+          onClick={() => {
+            setAutoMode(!autoMode)
+            if (autoMode) {
+              cancelScheduled()
+            }
+          }}
+          size={'sm'}
+          variant={autoMode ? 'default' : 'outline'}
+          className={autoMode ? 'gap-2 bg-blue-600 hover:bg-blue-700' : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'}
+        >
+          <Zap className={'size-4'} />
+          {autoMode ? 'Auto AI' : 'Manual'}
+        </Button>
+
+        {autoMode && isPending && remainingTime !== null && (
+          <span className={'animate-pulse rounded-md bg-blue-600/20 px-3 py-1.5 text-xs text-blue-400'}>
+            {`AI in ${remainingTime}s...`}
+          </span>
+        )}
+      </div>
+
       <EditorRoot>
         <EditorContent
           initialContent={initialContent}
           extensions={extensions}
-          className={
-            'relative min-h-[600px] w-full overflow-hidden rounded-lg border border-muted bg-background shadow-sm'
-          }
+          className={'relative min-h-screen w-full border border-zinc-800 bg-zinc-900 shadow-xl'}
           editorProps={{
             handleDOMEvents: {
               keydown: (_view, event) => handleCommandNavigation(event)
@@ -170,7 +186,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
             handleDrop: (view, event, _slice, moved) => handleImageDrop(view, event, moved, uploadFn),
             attributes: {
               class:
-                'prose prose-lg dark:prose-invert prose-headings:font-title font-default focus:outline-none max-w-full px-4 sm:px-8 py-6'
+                'prose prose-lg prose-invert prose-headings:font-title font-default focus:outline-none max-w-3xl mx-auto px-8 py-16 text-zinc-200'
             }
           }}
           onUpdate={({ editor }) => {
@@ -184,28 +200,28 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
         >
           <EditorCommand
             className={
-              'z-50 h-auto max-h-[330px] overflow-y-auto rounded-md border border-muted bg-background px-1 py-2 shadow-md transition-all'
+              'z-50 h-auto max-h-[330px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-800 px-1 py-2 shadow-xl backdrop-blur-sm transition-all'
             }
           >
-            <EditorCommandEmpty className={'px-2 text-muted-foreground'}>{'No results'}</EditorCommandEmpty>
+            <EditorCommandEmpty className={'px-2 text-zinc-500'}>{'No results'}</EditorCommandEmpty>
             <EditorCommandList>
               {suggestionItems.map((item) => (
                 <EditorCommandItem
                   value={item.title}
                   onCommand={(val) => item.command?.(val)}
                   className={
-                    'flex w-full items-center space-x-2 rounded-md px-2 py-1 text-left text-sm hover:bg-accent aria-selected:bg-accent'
+                    'flex w-full items-center space-x-2 rounded-md px-2 py-1 text-left text-sm text-zinc-300 hover:bg-zinc-700 aria-selected:bg-zinc-700'
                   }
                   key={item.title}
                 >
                   <div
-                    className={'flex size-10 items-center justify-center rounded-md border border-muted bg-background'}
+                    className={'flex size-10 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-400'}
                   >
                     {item.icon}
                   </div>
                   <div>
-                    <p className={'font-medium'}>{item.title}</p>
-                    <p className={'text-xs'}>{item.description}</p>
+                    <p className={'font-medium text-zinc-200'}>{item.title}</p>
+                    <p className={'text-xs text-zinc-500'}>{item.description}</p>
                   </div>
                 </EditorCommandItem>
               ))}

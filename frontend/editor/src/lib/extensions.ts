@@ -23,7 +23,15 @@ import {
 import { Markdown } from 'tiptap-markdown'
 
 const aiHighlight = AIHighlight
-const placeholder = Placeholder
+const placeholder = Placeholder.configure({
+  placeholder: ({ node }) => {
+    if (node.type.name === 'heading') {
+      return 'Untitled'
+    }
+    return 'Start writing or type "/" for commands...'
+  },
+  includeChildren: true
+})
 
 const tiptapLink = TiptapLink.configure({
   HTMLAttributes: {

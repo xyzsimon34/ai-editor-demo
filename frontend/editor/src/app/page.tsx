@@ -9,12 +9,10 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState('Saved')
 
   return (
-    <div className={'flex min-h-screen flex-col bg-background'}>
+    <div className={'flex min-h-screen flex-col bg-zinc-950'}>
       <Header saveStatus={saveStatus} />
       <main className={'flex-1'}>
-        <div className={'mx-auto w-full max-w-4xl px-4 py-12 sm:px-6 lg:px-8'}>
-          <Editor onSaveStatusChange={setSaveStatus} />
-        </div>
+        <Editor onSaveStatusChange={setSaveStatus} />
       </main>
     </div>
   )
