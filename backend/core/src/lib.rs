@@ -1,3 +1,4 @@
+pub mod editor;
 pub mod intelligence;
 pub mod model;
 pub mod refiner;

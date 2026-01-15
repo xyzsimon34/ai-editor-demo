@@ -3,90 +3,11 @@ use crate::{api::state::MessageStructure, http, opts::*};
 use std::{sync::Arc, time::Duration};
 
 use atb_cli_utils::AtbCli;
-use backend_core::{sqlx_postgres, temporal};
+use backend_core::{editor, sqlx_postgres, temporal};
 use tokio::sync::broadcast;
-use yrs::{Doc, GetString, Text, Transact, XmlFragment, XmlTextPrelim};
+use yrs::{Doc, Text, Transact, XmlFragment};
 
-// 從 XML Fragment 提取純文字內容（處理所有嵌套結構）
-fn extract_text_from_fragment(
-    fragment: &yrs::types::xml::XmlFragmentRef,
-    txn: &yrs::Transaction,
-) -> String {
-    let mut content = String::new();
-    let len = fragment.len(txn);
-
-    for i in 0..len {
-        if let Some(child) = fragment.get(txn, i) {
-            extract_node_content(&child, txn, &mut content, false);
-        }
-    }
-
-    // 移除末尾多餘的換行
-    content.trim_end_matches('\n').to_string()
-}
-
-// 遞迴處理節點內容
-fn extract_node_content(
-    node: &yrs::types::xml::XmlOut,
-    txn: &yrs::Transaction,
-    output: &mut String,
-    is_inline: bool,
-) {
-    match node {
-        yrs::types::xml::XmlOut::Text(text_ref) => {
-            // 使用 GetString trait 的 get_string 方法
-            let text = text_ref.get_string(txn);
-            if !text.is_empty() {
-                output.push_str(&text);
-            }
-        }
-        yrs::types::xml::XmlOut::Element(elem_ref) => {
-            let tag = elem_ref.tag().as_ref();
-            let elem_len = elem_ref.len(txn);
-
-            // 判斷是否為區塊級元素（需要換行）
-            let is_block = matches!(
-                tag,
-                "paragraph" | "heading" | "code_block" | "blockquote" | "horizontal_rule"
-            );
-
-            // 判斷是否為換行元素
-            let is_break = matches!(tag, "hard_break" | "br");
-
-            // 遞迴處理所有子節點
-            for j in 0..elem_len {
-                if let Some(child) = elem_ref.get(txn, j) {
-                    extract_node_content(&child, txn, output, !is_block);
-                }
-            }
-
-            // 根據元素類型添加格式
-            if is_break {
-                output.push('\n');
-            } else if is_block && !is_inline {
-                // 區塊級元素結束時添加換行（但不在嵌套的 inline 元素中）
-                output.push('\n');
-            }
-        }
-        yrs::types::xml::XmlOut::Fragment(fragment_ref) => {
-            // 處理嵌套的 fragment，遞迴提取內容
-            let fragment_len = fragment_ref.len(txn);
-            for i in 0..fragment_len {
-                if let Some(child) = fragment_ref.get(txn, i) {
-                    extract_node_content(&child, txn, output, is_inline);
-                }
-            }
-        }
-    }
-}
-
-// 讓 AI agent 從 Doc 獲取純文字內容
-#[allow(dead_code)]
-fn get_plain_text_from_doc(doc: &Doc) -> String {
-    let xml_fragment = doc.get_or_insert_xml_fragment("content");
-    let txn = doc.transact();
-    extract_text_from_fragment(&xml_fragment, &txn)
-}
+// Doc 讀寫操作已移至 backend_core::editor 模組
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -142,7 +63,7 @@ pub async fn run(
             tracing::info!("🤖 AI is writing...");
 
             // 先讀取當前文檔內容
-            let current_content = get_plain_text_from_doc(&ai_doc);
+            let current_content = editor::get_doc_content(&ai_doc);
 
             if !current_content.is_empty() {
                 tracing::info!("📄 Current document content: {}", current_content);
@@ -215,56 +136,4 @@ pub async fn run(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_plain_text_from_doc() {
-        let doc = Doc::new();
-        let text = get_plain_text_from_doc(&doc);
-        assert_eq!(text, "");
-    }
-
-    #[test]
-    fn test_get_plain_text_from_doc_with_data() {
-        let doc = Doc::new();
-        let f = doc.get_or_insert_xml_fragment("content");
-
-        // 使用 block scope 確保可寫事務在讀取前結束
-        {
-            let mut txn = doc.transact_mut();
-            f.insert(&mut txn, 0, XmlTextPrelim::new("hello, world!"));
-        } // txn 在這裡結束
-
-        // 現在可以安全地創建只讀事務
-        let text = get_plain_text_from_doc(&doc);
-        assert_eq!(text, "hello, world!");
-    }
-
-    #[test]
-    fn test_extract_text_from_fragment() {
-        let doc = Doc::new();
-        let xml_fragment = doc.get_or_insert_xml_fragment("content");
-        let txn = doc.transact();
-        let text = extract_text_from_fragment(&xml_fragment, &txn);
-        assert_eq!(text, "");
-    }
-
-    #[test]
-    fn test_extract_text_from_fragment_with_data() {
-        let doc = Doc::new();
-        let f = doc.get_or_insert_xml_fragment("content");
-
-        // 使用可寫事務插入內容
-        {
-            let mut txn = doc.transact_mut();
-            f.insert(&mut txn, 0, XmlTextPrelim::new("hello, world!"));
-        }
-
-        // 使用只讀事務提取文字
-        let txn = doc.transact();
-        let text = extract_text_from_fragment(&f, &txn);
-        assert_eq!(text, "hello, world!");
-    }
-}
+// 測試已移至 backend_core::editor 模組

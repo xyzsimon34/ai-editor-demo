@@ -2,8 +2,8 @@ use crate::api::state::{AppState, MessageStructure};
 
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
     routing::get,
@@ -15,10 +15,7 @@ pub fn routes() -> axum::Router<AppState> {
     axum::Router::new().route("/ws", get(ws_handler))
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -48,22 +45,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Ok(msg) = rx.recv().await {
             let ws_msg = match msg {
                 // Unpack Lane A -> Binary
-                MessageStructure::YjsUpdate(data) => {
-                    Message::Binary(data.into())
-                },
-                
+                MessageStructure::YjsUpdate(data) => Message::Binary(data.into()),
+
                 // Unpack Lane B -> Text
-                MessageStructure::AiCommand(json_string) => {
-                    Message::Text(json_string.into())
-                },
+                MessageStructure::AiCommand(json_string) => Message::Text(json_string.into()),
             };
-    
+
             if let Err(e) = sender.send(ws_msg).await {
                 break;
             }
         }
     });
-    
 
     let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {
@@ -86,4 +78,3 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         _ = (&mut recv_task) => send_task.abort(),
     };
 }
-
