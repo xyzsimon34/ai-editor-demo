@@ -55,6 +55,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [openAI, setOpenAI] = useState(false)
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
   const [autoMode, setAutoMode] = useState(false)
+  const [isAIGenerating, setIsAIGenerating] = useState(false)
 
   useEffect(() => {
     createYjsExtension(yXmlFragment).then(setYjsExtension)
@@ -69,6 +70,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   const handleAITrigger = () => {
     if (runAiCommand && collaborationStatus === 'connected') {
+      setIsAIGenerating(true)
       runAiCommand('AGENT', { role: 'researcher' })
     }
   }
@@ -93,7 +95,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     setSaveStatus(newStatus)
     onSaveStatusChange?.(newStatus)
 
-    if (autoMode) {
+    if (autoMode && !isAIGenerating) {
       scheduleAITrigger()
     }
   }, 500)
@@ -118,6 +120,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
       setTimeout(() => {
         editorInstance.commands.clearAIHighlight()
+        setIsAIGenerating(false)
       }, 3000)
     }
 
