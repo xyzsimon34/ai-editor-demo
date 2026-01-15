@@ -10,7 +10,10 @@ pub async fn new_composer(api_key: &str, role: &str, doc: &Arc<Doc>) -> Result<(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to execute tool: {}", e))?;
     println!("result: {}", result);
-    crate::editor::append_ai_content_to_doc(doc, &result)?;
+    let user_state = crate::editor::UserWritingState::new(3);
+    // let words = result.char_indices().map(|(_, c)| c.to_string()).collect();
+    let words = result.split_whitespace().map(|w| w.to_string()).collect();
+    crate::editor::append_ai_content_word_by_word(doc, words, 10, &user_state).await?;
     Ok(())
 }
 

@@ -62,9 +62,21 @@ pub enum MessageStructure {
 pub struct AiCommand {
     pub r#type: String,
     pub action: String,
-    pub payload: Option<serde_json::Value>,
+    pub payload: Option<AiCommandPayload>,
 }
 
-pub struct AiCommandPayload {
+#[derive(Clone, Debug, Deserialize)]
+pub struct AgentPayload {
     pub role : String,
+}
+
+pub struct RefinerPayload {
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum AiCommandPayload {
+    Refiner(String),
+    Agent(AgentPayload),
 }

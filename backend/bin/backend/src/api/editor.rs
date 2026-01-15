@@ -114,13 +114,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
-                                    let Some(payload) = cmd_payload else {
-                                        tracing::error!("No payload found for command: {:?}", cmd_action);
-                                        delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
-                                        return;
+                                    
+                                    // Extract text from Refiner payload
+                                    let content = match cmd_payload {
+                                        Some(crate::api::state::AiCommandPayload::Refiner(text)) => text,
+                                        Some(crate::api::state::AiCommandPayload::Agent(_)) => {
+                                            tracing::error!("Refiner command received Agent payload");
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "Invalid payload type for refiner command");
+                                            return;
+                                        }
+                                        None => {
+                                            tracing::error!("No payload found for command: {:?}", cmd_action);
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
+                                            return;
+                                        }
                                     };
+                                    
                                     // Create the input struct your existing processor expects
-                                    let input = RefineInput { content: payload.to_string() };
+                                    let input = RefineInput { content };
                                     let api_key = &state_for_task.api_key;
 
                                     // Select the correct function based on action
@@ -146,6 +157,21 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 }
                                 "AGENT" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
+                                    
+                                    // Extract role from Agent payload
+                                    let role = match cmd_payload {
+                                        Some(crate::api::state::AiCommandPayload::Agent(agent_payload)) => agent_payload.role,
+                                        Some(crate::api::state::AiCommandPayload::Refiner(_)) => {
+                                            tracing::error!("Agent command received Refiner payload");
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "Invalid payload type for agent command");
+                                            return;
+                                        }
+                                        None => {
+                                            tracing::error!("No payload found for command: {:?}", cmd_action);
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", "No payload found for command");
+                                            return;
+                                        }
+                                    };
                                     
                                     // 0. PRE-CHECK: Verify document has content structure
                                     if !backend_core::editor::write::has_content_structure(&state_for_task.editor_doc) {
@@ -175,7 +201,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // Select the correct function based on action
                                     let result: Result<String, anyhow::Error> = match cmd_action.as_str() {
                                         "AGENT" => {
-                                            match new_composer(api_key, "composer", &state_for_task.editor_doc).await {
+                                            match new_composer(api_key, &role, &state_for_task.editor_doc).await {
                                                 Ok(_) => Ok("Agent executed successfully".to_string()),
                                                 Err(e) => {
                                                     // Check if it's the "no content" error and handle gracefully
