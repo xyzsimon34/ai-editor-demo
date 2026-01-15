@@ -130,6 +130,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 }
                                 "AGENT" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
+                                    
+                                    // 0. PRE-CHECK: Verify document has content structure
+                                    if !backend_core::editor::write::has_content_structure(&state_for_task.editor_doc) {
+                                        tracing::warn!("Document has no content structure yet");
+                                        delegate_to_frontend(
+                                            &state_for_task,
+                                            "AI_STATUS",
+                                            "error",
+                                            "Please start typing in the editor first. The AI agent needs existing content to work with."
+                                        );
+                                        return;
+                                    }
+
                                     // 1. READ PHASE (Snapshot)
                                     // Extract the text from the server-side Y.js doc
                                     // let current_text = {
@@ -148,7 +161,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         "AGENT" => {
                                             match new_composer(api_key, "composer", &state_for_task.editor_doc).await {
                                                 Ok(_) => Ok("Agent executed successfully".to_string()),
-                                                Err(e) => Err(anyhow::anyhow!("Agent failed: {:?}", e)),
+                                                Err(e) => {
+                                                    // Check if it's the "no content" error and handle gracefully
+                                                    let error_msg = e.to_string();
+                                                    if error_msg.contains("Document has no content structure") {
+                                                        Err(anyhow::anyhow!("Document has no content structure yet. User needs to create content first."))
+                                                    } else {
+                                                        Err(anyhow::anyhow!("Agent failed: {}", error_msg))
+                                                    }
+                                                },
                                             }
                                         }
                                         _ => return, // Should be unreachable
@@ -159,10 +180,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         Ok(_output) => {
                                             // The agent modifies the doc directly via new_composer
                                             tracing::info!("✅ Applied AI changes via CRDT");
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "complete", "AI agent finished successfully");
                                         }
                                         Err(e) => {
-                                            tracing::error!("❌ AI failed: {:?}", e);
-                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &format!("AI failed: {:?}", e));
+                                            let error_msg = e.to_string();
+                                            // Provide user-friendly error messages
+                                            let user_message: String = if error_msg.contains("Document has no content structure") {
+                                                "Please start typing in the editor first. The AI agent needs existing content to work with.".to_string()
+                                            } else if error_msg.contains("Agent failed: ") {
+                                                // Extract a cleaner error message if possible
+                                                error_msg.strip_prefix("Agent failed: ")
+                                                    .map(|s| s.to_string())
+                                                    .unwrap_or(error_msg)
+                                            } else {
+                                                error_msg
+                                            };
+                                            
+                                            tracing::warn!("❌ AI agent failed: {}", user_message);
+                                            delegate_to_frontend(&state_for_task, "AI_STATUS", "error", &user_message);
                                         }
                                     }
                                 }

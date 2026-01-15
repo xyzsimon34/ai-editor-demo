@@ -2,6 +2,13 @@ use anyhow::Result;
 use std::sync::Arc;
 use yrs::{Doc, Text, Transact, XmlFragment};
 
+/// Check if the document has content structure (at least one paragraph)
+pub fn has_content_structure(doc: &Arc<Doc>) -> bool {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let txn = doc.transact();
+    xml_fragment.len(&txn) > 0
+}
+
 /// 將 AI 生成的內容寫入 Doc 的最後一個段落
 ///
 /// # Arguments
