@@ -49,7 +49,7 @@ pub async fn run(
         let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
     });
 
-// tokio::spawn(async move {
+    // tokio::spawn(async move {
     //     loop {
     //         tokio::time::sleep(Duration::from_secs(10)).await;
     //         tracing::info!("🤖 AI is writing...");
