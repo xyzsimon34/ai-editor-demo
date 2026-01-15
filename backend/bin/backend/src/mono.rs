@@ -49,17 +49,7 @@ pub async fn run(
         let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
     });
 
-    // Spawn "The AI Agent" (Ghost Writer Demo)
-    let test_clone = broadcast_tx.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(12)).await;
-            tracing::info!("Sending AI COMMANDS YOU!");
-            let _ = test_clone.send(MessageStructure::AiCommand("AI COMMANDS YOU!".to_string()));
-        }
-    });
-
-    // tokio::spawn(async move {
+// tokio::spawn(async move {
     //     loop {
     //         tokio::time::sleep(Duration::from_secs(10)).await;
     //         tracing::info!("🤖 AI is writing...");
