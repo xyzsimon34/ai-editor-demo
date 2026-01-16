@@ -26,6 +26,13 @@ interface UseCollaborationReturn {
   runAiCommand: (action: string, payload?: AiPayload) => void
 }
 
+interface BackseaterComment {
+  type: 'COMMENT'
+  comment_on: string
+  comment: string
+  color_hex: string
+}
+
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
 
 // Constants
@@ -125,9 +132,14 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
           Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
         } else if (typeof data === 'string') {
           try {
-            const parsed = JSON.parse(data) as AIStatusMessage
+            const parsed = JSON.parse(data)
             if (parsed.type === 'AI_STATUS') {
-              setAiStatus(parsed.status)
+              setAiStatus((parsed as AIStatusMessage).status)
+            } else if (parsed.type === 'COMMENT') {
+              const comment = parsed as BackseaterComment
+              console.log('Received COMMENT:', comment)
+            } else {
+              console.log('Received unknown message type:', parsed.type, parsed)
             }
           } catch {
             // eslint-disable-next-line no-console

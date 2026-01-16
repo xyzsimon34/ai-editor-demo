@@ -28,6 +28,27 @@ pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
     Ok(())
 }
 
+pub async fn new_backseating_agent(api_key: &str, doc: &Arc<Doc>) -> Result<Vec<crate::llm::tools::backseater::BackseaterArgs>> {
+    let content = crate::editor::get_doc_content(doc);
+    if content.trim().is_empty() {
+        tracing::info!("⚠️ Content is empty, skipping backseating agent");
+        return Ok(Vec::new());
+    }
+
+    tracing::info!("🔄 Calling OpenAI API for backseater comments (direct function calling)...");
+    // Use direct function calling - single API call, extract tool call arguments directly
+    // No Agent loop needed since tool arguments ARE the final answer
+    let comments = crate::llm::tools::backseater::execute_tool(&content, api_key)
+        .await
+        .map_err(|e| {
+            tracing::error!("❌ Failed to execute backseater tool: {:?}", e);
+            anyhow::anyhow!("Failed to execute backseater tool: {}", e)
+        })?;
+
+    tracing::info!("📝 Generated {} comments from backseater", comments.len());
+    Ok(comments)
+}
+
 pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
     // Extract plain text from document
     let content = crate::editor::get_doc_content(doc);
