@@ -26,6 +26,7 @@ import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
 import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
 import { useCollaboration } from '@/hooks/useCollaboration'
+import { useYjsPersistence } from '@/hooks/useYjsPersistence'
 
 import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
@@ -34,22 +35,106 @@ import { TextButtons } from './base/TextButtons'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
 import { slashCommand, suggestionItems } from './slash-command'
 
-const defaultEditorContent: JSONContent = {
-  type: 'doc',
-  content: []
-}
+// Constants
+const DOC_ID = 'ai-editor-doc'
+const DEFAULT_EDITOR_CONTENT: JSONContent = { type: 'doc', content: [] }
+const AI_HIGHLIGHT_DURATION_MS = 3000
+const FOCUS_DELAY_MS = 100
 
+// Types
 interface EditorProps {
   onSaveStatusChange?: (status: string) => void
 }
 
+// Subcomponents
+function LoadingState({ isLocalSynced }: { isLocalSynced: boolean }) {
+  return (
+    <div className={'flex min-h-screen items-center justify-center bg-zinc-900'}>
+      <div className={'flex flex-col items-center gap-3'}>
+        <div className={'size-8 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-500'} />
+        <span className={'text-sm text-zinc-400'}>
+          {isLocalSynced ? 'Initializing editor...' : 'Loading local data...'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ConnectionIndicator({
+  isConnected,
+  isServerSynced
+}: {
+  isConnected: boolean
+  isServerSynced: boolean
+}) {
+  const getClassName = () => {
+    if (isConnected && isServerSynced) return 'text-green-500'
+    if (isConnected) return 'text-blue-500'
+    return 'text-amber-500'
+  }
+
+  const getTitle = () => {
+    if (isConnected && isServerSynced) return 'Synced with server'
+    if (isConnected) return 'Connected, syncing...'
+    return 'Disconnected'
+  }
+
+  const getSymbol = () => {
+    if (isConnected && isServerSynced) return '●'
+    if (isConnected) return '◐'
+    return '○'
+  }
+
+  return (
+    <span className={getClassName()} title={getTitle()}>
+      {getSymbol()}
+    </span>
+  )
+}
+
+function StatusBar({
+  isConnected,
+  isServerSynced,
+  saveStatus,
+  characterCount
+}: {
+  isConnected: boolean
+  isServerSynced: boolean
+  saveStatus: string
+  characterCount?: number
+}) {
+  return (
+    <div
+      className={
+        'fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'
+      }
+    >
+      <ConnectionIndicator isConnected={isConnected} isServerSynced={isServerSynced} />
+      <span className={'text-zinc-400'}>{saveStatus}</span>
+      {characterCount !== undefined && characterCount > 0 && (
+        <span className={'text-zinc-500'}>{`${characterCount} characters`}</span>
+      )}
+    </div>
+  )
+}
+
+// Helpers
+function requestPersistentStorage() {
+  navigator.storage?.persist?.()
+}
+
+// Main Component
 export default function Editor({ onSaveStatusChange }: EditorProps) {
-  const [ydoc] = useState(() => new Y.Doc())
+  const [ydoc] = useState(() => new Y.Doc({ gc: false }))
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
 
-  const { status: collaborationStatus, aiStatus, runAiCommand } = useCollaboration(ydoc)
+  const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
+  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(
+    ydoc,
+    isLocalSynced
+  )
 
-  const [initialContent, setInitialContent] = useState<null | JSONContent>(null)
+  const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
   const [characterCount, setCharacterCount] = useState<number>()
   const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
@@ -59,9 +144,15 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [isLinterEnabled, setIsLinterEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
 
+  const isConnected = collaborationStatus === 'connected'
+
   useEffect(() => {
     createYjsExtension(yXmlFragment).then(setYjsExtension)
   }, [yXmlFragment])
+
+  useEffect(() => {
+    requestPersistentStorage()
+  }, [])
 
   const extensions = [
     ...getExtensions(),
@@ -71,18 +162,23 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   ]
 
   const handleAITrigger = () => {
-    if (runAiCommand && collaborationStatus === 'connected') {
+    if (runAiCommand && isConnected) {
       setIsAIGenerating(true)
       runAiCommand('AGENT', { role: 'researcher' })
     }
   }
 
   const handleLinterToggle = () => {
-    if (!runAiCommand || collaborationStatus !== 'connected') {
-      return
-    }
+    if (!runAiCommand || !isConnected) return
     setIsLinterEnabled((prev) => !prev)
     runAiCommand('TOGGLE', 'LINTER')
+  }
+
+  const handleAutoModeToggle = () => {
+    setIsAutoModeEnabled((prev) => {
+      if (prev) cancelScheduled()
+      return !prev
+    })
   }
 
   const { scheduleAITrigger, cancelScheduled, isPending, remainingTime } = useAutoAITrigger(editorInstance, {
@@ -93,48 +189,37 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     onTrigger: handleAITrigger
   })
 
-  const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
-    const json = editor.getJSON()
+  const debouncedUpdates = useDebouncedCallback((editor: EditorInstance) => {
     const charCount = editor.storage.characterCount.characters()
     setCharacterCount(charCount > 0 ? charCount : undefined)
 
-    window.localStorage.setItem('novel-content', JSON.stringify(json))
+    window.localStorage.setItem('novel-content', JSON.stringify(editor.getJSON()))
     window.localStorage.setItem('markdown', editor.storage.markdown.getMarkdown())
-    const newStatus = 'Saved'
-    setSaveStatus(newStatus)
-    onSaveStatusChange?.(newStatus)
 
-    if (isAutoModeEnabled && !isAIGenerating) {
-      scheduleAITrigger()
-    }
+    setSaveStatus('Saved')
+    onSaveStatusChange?.('Saved')
+
+    if (isAutoModeEnabled && !isAIGenerating) scheduleAITrigger()
   }, 500)
 
   useEffect(() => {
-    if (yjsExtension) {
-      setInitialContent(defaultEditorContent)
-    } else {
-      const content = window.localStorage.getItem('novel-content')
-      if (content) setInitialContent(JSON.parse(content))
-      else setInitialContent(defaultEditorContent)
-    }
-  }, [yjsExtension])
+    if (yjsExtension && isLocalSynced) setInitialContent(DEFAULT_EDITOR_CONTENT)
+  }, [yjsExtension, isLocalSynced])
 
   useEffect(() => {
     if (!editorInstance || !yjsExtension) return
 
-    const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
+    const handleYjsUpdate = (_update: Uint8Array, origin: unknown) => {
       if (origin !== 'websocket') return
 
       editorInstance.commands.highlightAIText('[AI was here]')
-
       setTimeout(() => {
         editorInstance.commands.clearAIHighlight()
         setIsAIGenerating(false)
-      }, 3000)
+      }, AI_HIGHLIGHT_DURATION_MS)
     }
 
     ydoc.on('update', handleYjsUpdate)
-
     return () => {
       ydoc.off('update', handleYjsUpdate)
     }
@@ -142,40 +227,28 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   useEffect(() => {
     if (editorInstance && yjsExtension) {
-      setTimeout(() => {
-        editorInstance.commands.focus('end')
-      }, 100)
+      setTimeout(() => editorInstance.commands.focus('end'), FOCUS_DELAY_MS)
     }
   }, [editorInstance, yjsExtension])
 
-  if (!initialContent || !yjsExtension) return null
+  if (!initialContent || !yjsExtension || !isLocalSynced) {
+    return <LoadingState isLocalSynced={isLocalSynced} />
+  }
 
   return (
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
       <AIStatusBubble status={aiStatus} />
 
-      <div
-        className={
-          'fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'
-        }
-      >
-        <span className={collaborationStatus === 'connected' ? 'text-green-500' : 'text-amber-500'}>
-          {collaborationStatus === 'connected' ? '●' : '◐'}
-        </span>
-        <span className={'text-zinc-400'}>{saveStatus}</span>
-        {characterCount !== undefined && characterCount > 0 && (
-          <span className={'text-zinc-500'}>{`${characterCount} characters`}</span>
-        )}
-      </div>
+      <StatusBar
+        isConnected={isConnected}
+        isServerSynced={isServerSynced}
+        saveStatus={saveStatus}
+        characterCount={characterCount}
+      />
 
       <div className={'fixed bottom-6 left-6 z-50 flex items-center gap-3'}>
         <Button
-          onClick={() => {
-            setIsAutoModeEnabled(!isAutoModeEnabled)
-            if (isAutoModeEnabled) {
-              cancelScheduled()
-            }
-          }}
+          onClick={handleAutoModeToggle}
           size={'sm'}
           variant={isAutoModeEnabled ? 'default' : 'outline'}
           className={
@@ -197,7 +270,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
               ? 'gap-2 bg-emerald-600 text-white hover:bg-emerald-700'
               : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
           }
-          disabled={collaborationStatus !== 'connected'}
+          disabled={!isConnected}
         >
           <Sparkles className={'size-4'} />
           {isLinterEnabled ? 'Linter On' : 'Linter Off'}
@@ -229,9 +302,8 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           onUpdate={({ editor }) => {
             setEditorInstance(editor)
             debouncedUpdates(editor)
-            const newStatus = 'Unsaved'
-            setSaveStatus(newStatus)
-            onSaveStatusChange?.(newStatus)
+            setSaveStatus('Unsaved')
+            onSaveStatusChange?.('Unsaved')
           }}
           slotAfter={<ImageResizer />}
         >
@@ -274,8 +346,6 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           </GenerativeMenuSwitch>
         </EditorContent>
       </EditorRoot>
-
-      {/* <PulseSidebar editorText={editorText} isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} /> */}
     </div>
   )
 }

@@ -14,7 +14,7 @@ use yrs::Doc;
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
 pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
 pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
-pub static BACKSEATER_FLAG: AtomicBool = AtomicBool::new(true);
+pub static BACKSEATER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
     db_opts: DatabaseOpts,
