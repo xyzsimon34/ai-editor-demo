@@ -12,7 +12,7 @@ use tokio::sync::watch;
 use yrs::Doc;
 // Doc 讀寫操作已移至 backend_core::editor 模組
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
-pub static LINTER_FLAG: AtomicBool = AtomicBool::new(true);
+pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
 pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
