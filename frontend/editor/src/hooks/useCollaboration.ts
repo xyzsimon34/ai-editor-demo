@@ -3,9 +3,6 @@ import * as Y from 'yjs'
 
 import { env } from '@/constants/env'
 
-// Interfaces
-type AiPayload = Record<string, unknown> | string | number | boolean | null
-
 interface AiCommandPayload {
   type: 'AI_COMMAND'
   action: string
@@ -18,51 +15,51 @@ interface AIStatusMessage {
   message: string
 }
 
-type AIStatus = 'idle' | 'thinking' | 'done'
+interface SyncCompleteMessage {
+  type: 'SYNC_COMPLETE'
+}
 
 interface UseCollaborationReturn {
   status: ConnectionStatus
   aiStatus: AIStatus
+  isServerSynced: boolean
   runAiCommand: (action: string, payload?: AiPayload) => void
 }
 
+type AiPayload = Record<string, unknown> | string | number | boolean | null
+type AIStatus = 'idle' | 'thinking' | 'done'
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
+type WebSocketMessage = AIStatusMessage | SyncCompleteMessage
 
-// Constants
 const RECONNECT_DELAY_MS = 3000
 const CLEAN_CLOSE_CODE = 1000
 
-export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
+function buildWebSocketUrl(backendUrl: string): string {
+  return backendUrl.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
+}
+
+function isWebSocketOpen(socket: WebSocket | null): boolean {
+  return socket?.readyState === WebSocket.OPEN
+}
+
+export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
+  const [isServerSynced, setIsServerSynced] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const hasReceivedFirstUpdate = useRef(false)
 
   const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
-    if (!ws || !isWebSocketOpen(ws)) {
-      console.warn('Cannot send AI command: Socket not open')
-      return
-    }
+    if (!ws || !isWebSocketOpen(ws)) return
 
-    const message: AiCommandPayload = {
-      type: 'AI_COMMAND',
-      action,
-      payload
-    }
-
+    const message: AiCommandPayload = { type: 'AI_COMMAND', action, payload }
     ws.send(JSON.stringify(message))
   }, [])
 
   useEffect(() => {
-    const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
-      const ws = wsRef.current
-      const isLocalUpdate = origin !== 'websocket'
-
-      if (ws && isWebSocketOpen(ws) && isLocalUpdate) {
-        ws.send(update)
-      }
-    }
+    if (!isLocalSynced) return
 
     const clearReconnectTimeout = () => {
       if (reconnectTimeoutRef.current) {
@@ -71,72 +68,62 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
       }
     }
 
-    const scheduleReconnect = (connect: () => void) => {
-      // eslint-disable-next-line no-console
-      console.log(`Attempting to reconnect in ${RECONNECT_DELAY_MS / 1000} seconds...`)
+    const scheduleReconnect = (connectFn: () => void) => {
       reconnectTimeoutRef.current = setTimeout(() => {
         reconnectTimeoutRef.current = null
-        connect()
+        connectFn()
       }, RECONNECT_DELAY_MS)
     }
 
-    const connect = () => {
-      const wsUrl = buildWebSocketUrl(env.BACKEND_URL)
-      // eslint-disable-next-line no-console
-      console.log('Connecting to WebSocket:', wsUrl)
-      setStatus('connecting')
+    const handleYjsUpdate = (update: Uint8Array, origin: unknown) => {
+      const ws = wsRef.current
+      if (ws && isWebSocketOpen(ws) && origin !== 'websocket') {
+        ws.send(update)
+      }
+    }
 
-      const ws = new WebSocket(wsUrl)
+    const handleBinaryMessage = (data: ArrayBuffer) => {
+      Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
+      if (!hasReceivedFirstUpdate.current) {
+        hasReceivedFirstUpdate.current = true
+        setIsServerSynced(true)
+      }
+    }
+
+    const handleJsonMessage = (data: string) => {
+      try {
+        const parsed = JSON.parse(data) as WebSocketMessage
+        if (parsed.type === 'AI_STATUS') setAiStatus(parsed.status)
+        else if (parsed.type === 'SYNC_COMPLETE') setIsServerSynced(true)
+      } catch {
+        // Ignore non-JSON messages
+      }
+    }
+
+    const connect = () => {
+      setStatus('connecting')
+      const ws = new WebSocket(buildWebSocketUrl(env.BACKEND_URL))
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws
 
       ws.onopen = () => {
-        // eslint-disable-next-line no-console
-        console.log('WebSocket connected successfully')
         setStatus('connected')
         clearReconnectTimeout()
+        ws.send(Y.encodeStateVector(ydoc))
       }
 
       ws.onclose = (event) => {
-        // eslint-disable-next-line no-console
-        console.log('WebSocket closed:', event.code, event.reason || 'No reason')
         setStatus('disconnected')
-
-        const isCleanClose = event.code === CLEAN_CLOSE_CODE
-        const hasNoScheduledReconnect = !reconnectTimeoutRef.current
-
-        if (!isCleanClose && hasNoScheduledReconnect) {
+        if (event.code !== CLEAN_CLOSE_CODE && !reconnectTimeoutRef.current) {
           scheduleReconnect(connect)
         }
       }
 
-      ws.onerror = (error) => {
-        // eslint-disable-next-line no-console
-        console.error('WebSocket error:', error)
-        // eslint-disable-next-line no-console
-        console.error('WebSocket failed to connect. Is the backend running on', env.BACKEND_URL, '?')
-        setStatus('disconnected')
-      }
+      ws.onerror = () => setStatus('disconnected')
 
       ws.onmessage = (event) => {
-        const data = event.data
-
-        if (data instanceof ArrayBuffer) {
-          Y.applyUpdate(ydoc, new Uint8Array(data), 'websocket')
-        } else if (typeof data === 'string') {
-          try {
-            const parsed = JSON.parse(data) as AIStatusMessage
-            if (parsed.type === 'AI_STATUS') {
-              setAiStatus(parsed.status)
-            }
-          } catch {
-            // eslint-disable-next-line no-console
-            console.log('Received non-JSON string:', data)
-          }
-        } else {
-          // eslint-disable-next-line no-console
-          console.log('Received unknown message type:', typeof data, data)
-        }
+        if (event.data instanceof ArrayBuffer) handleBinaryMessage(event.data)
+        else if (typeof event.data === 'string') handleJsonMessage(event.data)
       }
     }
 
@@ -145,21 +132,12 @@ export function useCollaboration(ydoc: Y.Doc): UseCollaborationReturn {
 
     return () => {
       clearReconnectTimeout()
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
+      wsRef.current?.close()
       ydoc.off('update', handleYjsUpdate)
+      hasReceivedFirstUpdate.current = false
+      setIsServerSynced(false)
     }
-  }, [ydoc])
+  }, [ydoc, isLocalSynced])
 
-  return { status, aiStatus, runAiCommand }
-}
-
-// Helpers
-function buildWebSocketUrl(backendUrl: string): string {
-  return backendUrl.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
-}
-
-function isWebSocketOpen(socket: WebSocket | null): boolean {
-  return socket?.readyState === WebSocket.OPEN
+  return { status, aiStatus, isServerSynced, runAiCommand }
 }
