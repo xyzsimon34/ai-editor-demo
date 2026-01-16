@@ -109,7 +109,7 @@ export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollab
       ws.onopen = () => {
         setStatus('connected')
         clearReconnectTimeout()
-        ws.send(Y.encodeStateVector(ydoc))
+        ws.send(Y.encodeStateAsUpdate(ydoc))
       }
 
       ws.onclose = (event) => {
