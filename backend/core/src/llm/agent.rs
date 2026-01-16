@@ -31,27 +31,30 @@ pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
 pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
     // Extract plain text from document
     let content = crate::editor::get_doc_content(doc);
-    
     if content.trim().is_empty() {
+        tracing::info!("⚠️ Content is empty, skipping emoji replacer");
         return Ok(()); // Skip if no content
     }
-
     // Get replacement suggestions from AI
     let replacements = crate::llm::tools::emoji_replacer::execute_tool(&content, api_key)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to execute emoji replacer tool: {}", e))?;
-
+        .map_err(|e| {
+            tracing::error!("❌ Failed to execute emoji replacer tool: {:?}", e);
+            anyhow::anyhow!("Failed to execute emoji replacer tool: {}", e)
+        })?;
+    
     if replacements.is_empty() {
-        tracing::debug!("No emoji replacements suggested");
+        tracing::info!("⚠️ No emoji replacements suggested by AI, skipping");
         return Ok(());
     }
 
-    // Log what replacements we got
-    tracing::info!("Received {} replacement suggestions: {:?}", replacements.len(), replacements);
-
     // Apply replacements to the document
-    crate::editor::write::apply_replacements(doc, "content", &replacements)?;
+    crate::editor::write::apply_replacements(doc, "content", &replacements)
+        .map_err(|e| {
+            tracing::error!("❌ Failed to apply replacements: {:?}", e);
+            e
+        })?;
 
-    tracing::info!("✅ Applied {} emoji replacements", replacements.len());
+    tracing::info!("✅ Successfully applied {} emoji replacements", replacements.len());
     Ok(())
 }

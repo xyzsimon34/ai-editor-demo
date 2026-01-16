@@ -25,8 +25,7 @@ pub async fn execute_tool(content: &str, api_key: &str) -> Result<Vec<Replacemen
     let system_content = r#"You are a helpful assistant that suggests emoji replacements for words in text.
 Given a text, return a JSON object with a "replacements" key containing an array of replacement suggestions.
 Each replacement should be in the format: {"replace": "word", "with": "😀"}
-Only suggest replacements that make sense (e.g., "happy" -> "😀", "sad" -> "😢").
-Limit to maximum 10 replacements.
+Limit to maximum 10 replacements. Always try to replace at least one word.
 Return ONLY valid JSON in this format: {"replacements": [{"replace": "word1", "with": "😀"}, ...]}"#.to_string();
 
     let user_content = format!(
@@ -70,14 +69,12 @@ Return ONLY valid JSON in this format: {"replacements": [{"replace": "word1", "w
         .as_str()
         .context("Failed to get content from Emoji Replacer response")?;
 
-    tracing::debug!("Raw AI response: {}", content_str);
-
     // Parse the JSON response
     // With json_object format, we expect {"replacements": [...]}
     // But also handle cases where it might return just [...]
     let parsed: serde_json::Value = serde_json::from_str(content_str)
         .context("Failed to parse JSON response")?;
-
+    
     let replacements: Vec<Replacement> = if let Some(arr) = parsed.get("replacements").and_then(|v| v.as_array()) {
         // Format: {"replacements": [...]}
         serde_json::from_value(serde_json::Value::Array(arr.clone()))
@@ -88,7 +85,8 @@ Return ONLY valid JSON in this format: {"replacements": [{"replace": "word1", "w
             .context("Failed to parse replacements as direct array")?
     } else {
         // Log the actual response for debugging
-        tracing::warn!("Unexpected JSON format: {}", parsed);
+        tracing::warn!("⚠️ Unexpected JSON format: {}", parsed);
+        tracing::warn!("⚠️ Parsed keys: {:?}", parsed.as_object().map(|o| o.keys().collect::<Vec<_>>()));
         return Err(anyhow::anyhow!(
             "Expected JSON object with 'replacements' key or array, got: {}",
             parsed

@@ -9,11 +9,11 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::sync::watch;
-use yrs::{Doc, ReadTxn, Transact};
+use yrs::Doc;
 // Doc 讀寫操作已移至 backend_core::editor 模組
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
-pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
-pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(true);
+pub static LINTER_FLAG: AtomicBool = AtomicBool::new(true);
+pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -68,6 +68,7 @@ pub async fn run(
         // 核心邏輯：等待變動 -> 觸發 5 秒冷卻 -> 執行
         loop {
             if notify_rx.changed().await.is_err() {
+                tracing::error!("🔍 Notify RX changed error");
                 break;
             }
 
@@ -89,6 +90,7 @@ pub async fn run(
 
             let linter_enabled = LINTER_FLAG.load(Ordering::Relaxed);
             let emoji_replacer_enabled = EMOJI_REPLACER_FLAG.load(Ordering::Relaxed);
+            
 
             let current_content = editor::get_doc_content(&doc_for_task);
             if current_content.is_empty() || current_content == before_content {
