@@ -367,9 +367,35 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     match content.as_str() {
                                         "LINTER" => {
                                             tracing::info!("🤖 toggling linter...");
-                                            crate::mono::LINTER_FLAG.store(!crate::mono::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                                            let current = crate::mono::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+                                            crate::mono::LINTER_FLAG.store(!current, std::sync::atomic::Ordering::Relaxed);
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &format!("Linter {}", if !current { "enabled" } else { "disabled" }),
+                                            );
                                         }
-                                        _ => return, // Should be unreachable
+                                        "EMOJI_REPLACER" => {
+                                            tracing::info!("🤖 toggling emoji replacer...");
+                                            let current = crate::mono::EMOJI_REPLACER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+                                            crate::mono::EMOJI_REPLACER_FLAG.store(!current, std::sync::atomic::Ordering::Relaxed);
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &format!("Emoji replacer {}", if !current { "enabled" } else { "disabled" }),
+                                            );
+                                        }
+                                        _ => {
+                                            tracing::error!("Unknown toggle target: {}", content);
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "error",
+                                                &format!("Unknown toggle target: {}", content),
+                                            );
+                                        }
                                     }
                                 }
                                 _ => {

@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use yrs::{Doc, Text, Transact, XmlFragment};
+use yrs::{Doc, GetString, Text, Transact, XmlFragment};
 
 // ============================================================================
 // User Writing Detection Context
@@ -247,6 +247,116 @@ pub async fn append_ai_content_word_by_word(
     }
 
     Ok(())
+}
+
+/// Apply text replacements to all text nodes in the document
+///
+/// This function traverses the XML fragment, finds all text nodes,
+/// and applies the given replacements to each text node.
+///
+/// # Arguments
+/// * `doc` - Shared Yrs Doc instance
+/// * `field_name` - Field name of the XML fragment (usually "content")
+/// * `replacements` - Vector of replacement rules
+///
+/// # Returns
+/// `Ok(())` if successful, `Err` if failed
+pub fn apply_replacements(
+    doc: &Arc<Doc>,
+    field_name: &str,
+    replacements: &[crate::llm::tools::emoji_replacer::Replacement],
+) -> Result<()> {
+    if replacements.is_empty() {
+        return Ok(());
+    }
+
+    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
+    
+    // CRITICAL: XmlTextRef references are tied to the transaction they were created in.
+    // We MUST collect them within the write transaction, not before it.
+    let mut txn = doc.transact_mut();
+    let mut text_nodes = Vec::new();
+    collect_text_nodes(&txn, &xml_fragment, &mut text_nodes);
+
+    // Apply replacements to each text node
+    for text_ref in text_nodes {
+        let current_text = text_ref.get_string(&txn);
+        let mut new_text = current_text.clone();
+        
+        // Apply all replacements
+        for replacement in replacements {
+            if !replacement.replace.is_empty() {
+                new_text = new_text.replace(&replacement.replace, &replacement.with);
+            }
+        }
+        
+        // Only update if text changed
+        if new_text != current_text {
+            let len = text_ref.len(&txn);
+            if len > 0 {
+                // Remove all existing text
+                text_ref.remove_range(&mut txn, 0, len);
+            }
+            // Insert new text
+            text_ref.insert(&mut txn, 0, &new_text);
+            tracing::debug!("Applied replacement: '{}' -> '{}'", current_text, new_text);
+        }
+    }
+
+    // Transaction commits here when it goes out of scope
+    // This triggers the observer in mono.rs to broadcast the update
+    Ok(())
+}
+
+/// Helper: Recursively find all XmlTextRef nodes in a fragment
+/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
+fn collect_text_nodes(
+    txn: &impl yrs::ReadTxn,
+    fragment: &yrs::XmlFragmentRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+    
+    let len = fragment.len(txn);
+    for i in 0..len {
+        if let Some(child) = fragment.get(txn, i) {
+            match child {
+                XmlOut::Element(elem) => {
+                    // Recurse into element
+                    collect_text_nodes_from_elem(txn, &elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Helper: Recursively find all XmlTextRef nodes in an element
+/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
+fn collect_text_nodes_from_elem(
+    txn: &impl yrs::ReadTxn,
+    elem: &yrs::XmlElementRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+    
+    let len = elem.len(txn);
+    for i in 0..len {
+        if let Some(child) = elem.get(txn, i) {
+            match child {
+                XmlOut::Element(child_elem) => {
+                    collect_text_nodes_from_elem(txn, &child_elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]
