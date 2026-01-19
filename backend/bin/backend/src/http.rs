@@ -65,25 +65,24 @@ pub async fn start_http(
     // Setup Observer: When Yrs changes (by User OR AI), broadcast the delta
     let (broadcast_tx, _) = tokio::sync::broadcast::channel::<MessageStructure>(100);
 
-    let boardcast_tx_for_sub = broadcast_tx.clone();
-    let boardcast_tx_for_send_error = broadcast_tx.clone();
-    let broadcast_tx_for_task = broadcast_tx.clone();
+    // Clone for Yjs observer (needed in move closure)
+    let broadcast_tx_for_yjs = broadcast_tx.clone();
 
     let _sub = doc.observe_update_v1(move |_txn, update_event| {
         let update = update_event.update.to_vec();
         tracing::info!(
             "📡 Yjs document updated, broadcasting {} bytes to {} subscribers",
             update.len(),
-            boardcast_tx_for_sub.receiver_count()
+            broadcast_tx_for_yjs.receiver_count()
         );
         // Send binary update to all connected clients
-        let send_result = boardcast_tx_for_sub.send(MessageStructure::YjsUpdate(update));
+        let send_result = broadcast_tx_for_yjs.send(MessageStructure::YjsUpdate(update));
         if send_result.is_err() {
             tracing::warn!("⚠️ Failed to broadcast Yjs update (no subscribers?)");
         } else {
             tracing::info!(
                 "✅ Yjs update broadcasted successfully to {} subscribers",
-                boardcast_tx_for_sub.receiver_count()
+                broadcast_tx_for_yjs.receiver_count()
             );
         }
         let _ = notify_tx.send(Instant::now());
@@ -93,6 +92,7 @@ pub async fn start_http(
     // Clone values before moving into the async task
     let api_key_for_task = api_key.clone();
     let doc_for_task = doc.clone();
+    let broadcast_tx_for_task = broadcast_tx.clone();
 
     // Start smart auto-check task (linter/emoji replacer/backseater)
     tokio::spawn(async move {
@@ -171,7 +171,7 @@ pub async fn start_http(
                                     "comment": comment.comment,
                                     "color_hex": comment.color_hex
                                 });
-                                if let Err(e) = boardcast_tx_for_send_error
+                                if let Err(e) = broadcast_tx_for_task
                                     .send(MessageStructure::AiCommand(comment_json.to_string()))
                                 {
                                     tracing::warn!(
@@ -208,7 +208,7 @@ pub async fn start_http(
         jwt_decoder,
         api_key,
         doc,
-        broadcast_tx_for_task,
+        broadcast_tx,
         user_writing_timeout_ms,
     );
 
