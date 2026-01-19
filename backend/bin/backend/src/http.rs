@@ -1,16 +1,23 @@
 use crate::{api, opts::*};
 
 use std::{
-    sync::{Arc, atomic::AtomicU64},
-    time::Duration,
+    sync::atomic::AtomicBool,
+    time::{Duration, Instant},
 };
 
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{sqlx_postgres, temporal};
+use backend_core::{editor, sqlx_postgres, temporal};
 use sqlx::PgPool;
-use tokio::{net::TcpListener, time::Instant};
+use std::sync::atomic::Ordering;
+use tokio::{net::TcpListener, sync::watch};
+
+// Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
+pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
+pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
+pub static BACKSEATER_FLAG: AtomicBool = AtomicBool::new(false);
+
 pub async fn run(
     db_opts: DatabaseOpts,
     http_opts: HttpOpts,
@@ -26,19 +33,10 @@ pub async fn run(
     )
     .await?;
 
-    // Create minimal editor state for Http mode (not used, but required by AppState)
+    // Initialize the Yrs Document for collaborative editing
+    // Start with empty fragment - y-prosemirror will handle structure automatically
     let doc = std::sync::Arc::new(yrs::Doc::new());
-    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
-
-    // Setup Observer: When Yrs changes, broadcast the delta
-    let tx_clone = broadcast_tx.clone();
-    let _sub = doc.observe_update_v1(move |_txn, update_event| {
-        let update = update_event.update.to_vec();
-        let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
-    });
-
-    let user_last_used_at = Arc::new(AtomicU64::new(Instant::now().elapsed().as_millis() as u64));
-    let user_writing_timeout_ms = opts.user_writing_timeout_ms;
+    let _xml_fragment = doc.get_or_insert_xml_fragment("content");
 
     start_http(
         pg_pool,
@@ -46,10 +44,7 @@ pub async fn run(
         http_opts,
         temporal_opts.task_queue,
         opts.openai_api_key,
-        doc,
-        broadcast_tx,
-        user_last_used_at,
-        user_writing_timeout_ms,
+        opts.user_writing_timeout_ms,
     )
     .await
 }
@@ -60,11 +55,145 @@ pub async fn start_http(
     http_opts: HttpOpts,
     task_queue: String,
     api_key: String,
-    editor_doc: std::sync::Arc<yrs::Doc>,
-    editor_broadcast_tx: tokio::sync::broadcast::Sender<MessageStructure>,
-    user_last_used_at: Arc<AtomicU64>,
     user_writing_timeout_ms: u64,
 ) -> anyhow::Result<()> {
+    // Create User Writing State for user writing detection
+    let (notify_tx, mut notify_rx) = watch::channel(Instant::now());
+
+    let doc = std::sync::Arc::new(yrs::Doc::new());
+
+    // Setup Observer: When Yrs changes (by User OR AI), broadcast the delta
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel::<MessageStructure>(100);
+
+    let boardcast_tx_for_sub = broadcast_tx.clone();
+    let boardcast_tx_for_send_error = broadcast_tx.clone();
+    let broadcast_tx_for_task = broadcast_tx.clone();
+
+    let _sub = doc.observe_update_v1(move |_txn, update_event| {
+        let update = update_event.update.to_vec();
+        tracing::info!(
+            "📡 Yjs document updated, broadcasting {} bytes to {} subscribers",
+            update.len(),
+            boardcast_tx_for_sub.receiver_count()
+        );
+        // Send binary update to all connected clients
+        let send_result = boardcast_tx_for_sub.send(MessageStructure::YjsUpdate(update));
+        if send_result.is_err() {
+            tracing::warn!("⚠️ Failed to broadcast Yjs update (no subscribers?)");
+        } else {
+            tracing::info!(
+                "✅ Yjs update broadcasted successfully to {} subscribers",
+                boardcast_tx_for_sub.receiver_count()
+            );
+        }
+        let _ = notify_tx.send(Instant::now());
+    });
+    tracing::info!("👂 Yjs update observer registered and ready");
+
+    // Clone values before moving into the async task
+    let api_key_for_task = api_key.clone();
+    let doc_for_task = doc.clone();
+
+    // Start smart auto-check task (linter/emoji replacer/backseater)
+    tokio::spawn(async move {
+        tracing::info!("🚀 Smart Auto-linter started (Debounce: 5s)");
+        let mut before_content = "".to_string();
+        // 核心邏輯：等待變動 -> 觸發 5 秒冷卻 -> 執行
+        loop {
+            if notify_rx.changed().await.is_err() {
+                tracing::error!("🔍 Notify RX changed error");
+                break;
+            }
+
+            loop {
+                let delay = tokio::time::sleep(std::time::Duration::from_secs(5));
+                tokio::pin!(delay);
+
+                tokio::select! {
+                    changed = notify_rx.changed() => {
+                        if changed.is_err() { return; }
+                        tracing::debug!("⌨️ User still typing, skipping checks");
+                        continue;
+                    }
+                    _ = &mut delay => {
+                        break;
+                    }
+                }
+            }
+
+            let linter_enabled = LINTER_FLAG.load(Ordering::Relaxed);
+            let emoji_replacer_enabled = EMOJI_REPLACER_FLAG.load(Ordering::Relaxed);
+            let backseater_enabled = BACKSEATER_FLAG.load(Ordering::Relaxed);
+
+            let current_content = editor::get_doc_content(&doc_for_task);
+            if current_content.is_empty() || current_content == before_content {
+                tracing::info!("🔍 Doc is empty or not changed, skipping checks");
+                continue;
+            }
+
+            if linter_enabled {
+                tracing::info!("🤖 Calling AI Linter...");
+                match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
+                    Ok(_) => {
+                        tracing::info!("✅ AI check successful");
+                    }
+                    Err(e) => tracing::error!("❌ AI check failed: {:?}", e),
+                }
+            }
+
+            if emoji_replacer_enabled {
+                tracing::info!("🤖 Calling AI Emoji Replacer...");
+                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await
+                {
+                    Ok(_) => {
+                        tracing::info!("✅ AI emoji replacer successful");
+                    }
+                    Err(e) => tracing::error!("❌ AI emoji replacer failed: {:?}", e),
+                }
+            }
+
+            if backseater_enabled {
+                tracing::info!("💬 Calling AI Backseater...");
+                match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task)
+                    .await
+                {
+                    Ok(comments) => {
+                        if !comments.is_empty() {
+                            tracing::info!(
+                                "✅ Generated {} comments from backseater",
+                                comments.len()
+                            );
+                            // Send each comment to frontend via broadcast channel
+                            for comment in comments {
+                                let comment_json = serde_json::json!({
+                                    "type": "COMMENT",
+                                    "comment_on": comment.comment_on,
+                                    "comment": comment.comment,
+                                    "color_hex": comment.color_hex
+                                });
+                                if let Err(e) = boardcast_tx_for_send_error
+                                    .send(MessageStructure::AiCommand(comment_json.to_string()))
+                                {
+                                    tracing::warn!(
+                                        "Failed to broadcast backseater comment: {:?}",
+                                        e
+                                    );
+                                }
+                            }
+                        } else {
+                            tracing::info!("⚠️ No comments generated by backseater");
+                        }
+                    }
+                    Err(e) => tracing::error!("❌ AI backseater failed: {:?}", e),
+                }
+            }
+
+            // Update before_content AFTER all tools have run (or been skipped)
+            before_content = editor::get_doc_content(&doc_for_task);
+        }
+        tracing::info!("🔌 Linter task exiting");
+    });
+
     let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
     let schema = crate::graphql::schema()
         .data(wf_engine.clone())
@@ -78,9 +207,8 @@ pub async fn start_http(
         jwt_encoder,
         jwt_decoder,
         api_key,
-        editor_doc,
-        editor_broadcast_tx,
-        user_last_used_at,
+        doc,
+        broadcast_tx_for_task,
         user_writing_timeout_ms,
     );
 

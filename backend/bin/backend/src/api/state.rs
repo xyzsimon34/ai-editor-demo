@@ -35,7 +35,6 @@ impl AppState {
         api_key: String,
         editor_doc: Arc<Doc>,
         editor_broadcast_tx: broadcast::Sender<MessageStructure>,
-        user_last_used_at: Arc<AtomicU64>,
         user_writing_timeout_ms: u64,
     ) -> Self {
         Self {
@@ -47,7 +46,7 @@ impl AppState {
             api_key,
             editor_doc,
             editor_broadcast_tx,
-            user_last_used_at,
+            user_last_used_at: Arc::new(AtomicU64::new(0)),
             user_writing_timeout_ms,
         }
     }
