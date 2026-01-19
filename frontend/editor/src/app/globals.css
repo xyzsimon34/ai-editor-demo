@@ -117,4 +117,33 @@
   .dark .ProseMirror .is-empty::before {
     color: rgb(113 113 122);
   }
+
+  /* AI Suggestion styles */
+  .ai-suggestion {
+    @apply transition-colors;
+  }
+
+  .ai-suggestion-pending {
+    @apply bg-blue-500/10 text-blue-300 border-b border-blue-500/30;
+  }
+
+  .dark .ai-suggestion-pending {
+    @apply bg-blue-500/20 text-blue-200 border-blue-500/40;
+  }
+
+  .ai-suggestion-accepted {
+    @apply bg-green-500/10 text-green-300;
+  }
+
+  .dark .ai-suggestion-accepted {
+    @apply bg-green-500/20 text-green-200;
+  }
+
+  .ai-suggestion-rejected {
+    @apply bg-red-500/10 text-red-300 line-through;
+  }
+
+  .dark .ai-suggestion-rejected {
+    @apply bg-red-500/20 text-red-200;
+  }
 }

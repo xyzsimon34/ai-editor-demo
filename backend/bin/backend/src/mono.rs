@@ -1,5 +1,6 @@
 use crate::{api::state::MessageStructure, http, opts::*};
 use atb_cli_utils::AtbCli;
+use atb_tokio_ext::shutdown_signal;
 use backend_core::{editor, sqlx_postgres, temporal};
 use std::time::Instant;
 use std::{
@@ -67,18 +68,39 @@ pub async fn run(
     tokio::spawn(async move {
         tracing::info!("🚀 Smart Auto-linter started (Debounce: 5s)");
         let mut before_content = "".to_string();
+        
+        // Create shutdown signal inside the async task
+        let mut shutdown = shutdown_signal();
+        tokio::pin!(shutdown);
+        
         // 核心邏輯：等待變動 -> 觸發 5 秒冷卻 -> 執行
         loop {
-            if notify_rx.changed().await.is_err() {
-                tracing::error!("🔍 Notify RX changed error");
-                break;
+            tokio::select! {
+                // Check for shutdown signal
+                _ = &mut shutdown => {
+                    tracing::info!("🛑 Shutdown signal received, stopping AI task");
+                    break;
+                }
+                // Wait for document changes
+                changed = notify_rx.changed() => {
+                    if changed.is_err() {
+                        tracing::info!("🔍 Notify RX channel closed, stopping AI task");
+                        break;
+                    }
+                }
             }
 
+            // Debounce loop: wait 5 seconds or until another change
             loop {
                 let delay = tokio::time::sleep(std::time::Duration::from_secs(5));
                 tokio::pin!(delay);
 
                 tokio::select! {
+                    // Check for shutdown signal
+                    _ = &mut shutdown => {
+                        tracing::info!("🛑 Shutdown signal received during debounce, stopping AI task");
+                        return;
+                    }
                     changed = notify_rx.changed() => {
                         if changed.is_err() { return; }
                         tracing::debug!("⌨️ User still typing, skipping checks");

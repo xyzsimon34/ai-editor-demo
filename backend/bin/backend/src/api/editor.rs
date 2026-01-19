@@ -271,6 +271,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             .await
                                             {
                                                 Ok(_) => {
+                                                    // Manually encode and broadcast the update to ensure it's sent
+                                                    // (Observer might not trigger reliably in async context)
+                                                    let update = {
+                                                        let txn = state_for_task.editor_doc.transact();
+                                                        txn.encode_state_as_update_v1(&yrs::StateVector::default())
+                                                    };
+                                                    
+                                                    if let Err(e) = state_for_task
+                                                        .editor_broadcast_tx
+                                                        .send(MessageStructure::YjsUpdate(update.to_vec()))
+                                                    {
+                                                        tracing::warn!("Failed to manually broadcast agent update: {:?}", e);
+                                                    } else {
+                                                        tracing::info!(
+                                                            "✅ Manually broadcasted agent update to {} subscribers",
+                                                            state_for_task.editor_broadcast_tx.receiver_count()
+                                                        );
+                                                    }
+                                                    
                                                     Ok("Agent executed successfully".to_string())
                                                 }
                                                 Err(e) => {
@@ -418,12 +437,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 }
 
 fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, message: &str) {
-    let _ = state.editor_broadcast_tx.send(MessageStructure::AiCommand(
-        serde_json::json!({
-            "type": command_type,
-            "status": status,
-            "message": message
-        })
-        .to_string(),
-    ));
+    let json_msg = serde_json::json!({
+        "type": command_type,
+        "status": status,
+        "message": message
+    })
+    .to_string();
+    
+    match state.editor_broadcast_tx.send(MessageStructure::AiCommand(json_msg.clone())) {
+        Ok(_) => {
+            tracing::info!(
+                "✅ Broadcasted {} message to {} subscribers: status={}, message={}",
+                command_type,
+                state.editor_broadcast_tx.receiver_count(),
+                status,
+                message
+            );
+        }
+        Err(e) => {
+            tracing::warn!("Failed to broadcast {} message: {:?}", command_type, e);
+        }
+    }
 }

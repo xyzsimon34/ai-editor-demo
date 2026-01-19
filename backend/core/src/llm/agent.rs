@@ -19,7 +19,13 @@ pub async fn new_composer(
 
     // 使用 prepare_words 預處理單詞（添加空格和換行符）
     let words = crate::editor::prepare_words(&result);
-    crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
+    // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
+    // Generate a unique run ID for this AI generation
+    let run_id = format!("extender-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis());
+    crate::editor::append_ai_content_to_doc(doc, &result, Some("extender"), Some(&run_id))?;
     Ok(())
 }
 
