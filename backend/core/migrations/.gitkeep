@@ -1,0 +1,2 @@
+# This directory contains SQL migration files for sqlx
+# Empty directory is fine for tests to run

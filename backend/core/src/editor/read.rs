@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use yrs::{Doc, GetString, Transact, XmlFragment};
+use yrs::{Doc, GetString, Transact, XmlFragment, XmlTextPrelim};
 
 // ============================================================================
 // Constants: Element Type Definitions
@@ -45,6 +45,16 @@ pub fn get_doc_content(doc: &Arc<Doc>) -> String {
     let xml_fragment = doc.get_or_insert_xml_fragment("content");
     let txn = doc.transact();
     extract_text_from_fragment(&xml_fragment, &txn)
+}
+
+    let doc = Arc::new(Doc::new());
+    let fragment = doc.get_or_insert_xml_fragment("content");
+    {
+        let mut txn = doc.transact_mut();
+        fragment.insert(&mut txn, 0, XmlTextPrelim::new("hello, world!"));
+    }
+    let content = get_doc_content(&doc);
+    assert_eq!(content, "hello, world!");
 }
 
 // ============================================================================
