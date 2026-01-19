@@ -17,8 +17,8 @@ pub async fn new_composer(
         .map_err(|e| anyhow::anyhow!("Failed to execute tool: {}", e))?;
     println!("result: {}", result);
 
-    // 使用 prepare_words 預處理單詞（添加空格和換行符）
-    let words = crate::editor::prepare_words(&result);
+    // 使用 format_word_stream 預處理單詞（添加空格和換行符）
+    let words = crate::editor::format_word_stream(&result);
     crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
     Ok(())
 }

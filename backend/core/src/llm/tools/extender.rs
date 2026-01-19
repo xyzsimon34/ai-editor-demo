@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use serde_json::json;
 
-pub async fn execute_tool(article_draft: &str, identity: &str, api_key: &str) -> Result<String> {
+// TODO: remove _identity
+pub async fn execute_tool(article_draft: &str, _identity: &str, api_key: &str) -> Result<String> {
     let client = reqwest::Client::new();
 
     let system_content = 
