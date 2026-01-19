@@ -15,7 +15,8 @@ use backend_core::refiner::processor::{
 };
 use backend_core::refiner::types::RefineInput;
 use futures::{sink::SinkExt, stream::StreamExt};
-use std::time::Duration;
+use std::{cmp::max, sync::atomic::Ordering};
+use tokio::time::Instant;
 use yrs::{ReadTxn, Transact, Update, updates::decoder::Decode};
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
@@ -71,21 +72,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             match msg {
                 // LANE A: Binary Sync (Existing)
                 Message::Binary(data) => {
+                    let now = Instant::now().elapsed().as_millis() as u64;
+
+                    state_clone.user_last_used_at.store(
+                        max(now, state_clone.user_last_used_at.load(Ordering::Relaxed)),
+                        Ordering::Relaxed,
+                    );
                     // 標記用戶正在寫入
-                    if let Some(user_state) = &state_clone.user_writing_state {
-                        user_state.mark_user_writing();
-
-                        // 設置定時器，自動清除標記
-                        let user_state_clone = user_state.clone();
-                        tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_millis(
-                                user_state_clone.writing_timeout_ms,
-                            ))
-                            .await;
-                            user_state_clone.clear_user_writing();
-                        });
-                    }
-
                     let mut txn = state_clone.editor_doc.transact_mut();
                     if let Ok(update) = Update::decode_v1(&data) {
                         if let Err(e) = txn.apply_update(update) {
@@ -251,23 +244,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     {
                                         // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
                                         "AGENT" => {
-                                            // 獲取共享的 UserWritingState
-                                            let Some(user_state) =
-                                                &state_for_task.user_writing_state
-                                            else {
-                                                return delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_STATUS",
-                                                    "error",
-                                                    "User writing state not available",
-                                                );
-                                            };
+                                            let user_last_used_at =
+                                                state_for_task.user_last_used_at.clone();
 
                                             match new_composer(
                                                 api_key,
                                                 &role,
                                                 &state_for_task.editor_doc,
-                                                user_state,
+                                                user_last_used_at,
+                                                state_for_task.user_writing_timeout_ms,
                                             )
                                             .await
                                             {
@@ -368,9 +353,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     match content.as_str() {
                                         "LINTER" => {
                                             tracing::info!("🤖 toggling linter...");
-                                            let current = crate::mono::LINTER_FLAG
+                                            let current = crate::http::LINTER_FLAG
                                                 .load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::mono::LINTER_FLAG.store(
+                                            crate::http::LINTER_FLAG.store(
                                                 !current,
                                                 std::sync::atomic::Ordering::Relaxed,
                                             );
@@ -386,9 +371,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         }
                                         "EMOJI_REPLACER" => {
                                             tracing::info!("🤖 toggling emoji replacer...");
-                                            let current = crate::mono::EMOJI_REPLACER_FLAG
+                                            let current = crate::http::EMOJI_REPLACER_FLAG
                                                 .load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::mono::EMOJI_REPLACER_FLAG.store(
+                                            crate::http::EMOJI_REPLACER_FLAG.store(
                                                 !current,
                                                 std::sync::atomic::Ordering::Relaxed,
                                             );

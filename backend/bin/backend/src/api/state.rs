@@ -4,10 +4,10 @@ use crate::{
 };
 
 use axum::extract::FromRef;
-use backend_core::{editor, temporal::WorkflowEngine};
+use backend_core::temporal::WorkflowEngine;
 use serde::Deserialize;
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicU64};
 use tokio::sync::broadcast;
 use yrs::Doc;
 
@@ -21,7 +21,8 @@ pub struct AppState {
     pub api_key: String,
     pub editor_doc: Arc<Doc>,
     pub editor_broadcast_tx: broadcast::Sender<MessageStructure>,
-    pub user_writing_state: Option<Arc<editor::UserWritingState>>,
+    pub user_last_used_at: Arc<AtomicU64>,
+    pub user_writing_timeout_ms: u64,
 }
 
 impl AppState {
@@ -34,7 +35,7 @@ impl AppState {
         api_key: String,
         editor_doc: Arc<Doc>,
         editor_broadcast_tx: broadcast::Sender<MessageStructure>,
-        user_writing_state: Option<Arc<editor::UserWritingState>>,
+        user_writing_timeout_ms: u64,
     ) -> Self {
         Self {
             schema,
@@ -45,7 +46,8 @@ impl AppState {
             api_key,
             editor_doc,
             editor_broadcast_tx,
-            user_writing_state,
+            user_last_used_at: Arc::new(AtomicU64::new(0)),
+            user_writing_timeout_ms,
         }
     }
 }
@@ -67,7 +69,7 @@ pub struct AiCommand {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AgentPayload {
-    pub role : String,
+    pub role: String,
 }
 
 pub struct RefinerPayload {
