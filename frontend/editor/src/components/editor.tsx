@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Extension } from '@tiptap/core'
 import { Sparkles, Zap } from 'lucide-react'
 import {
@@ -27,6 +27,7 @@ import { createYjsExtension } from '@/lib/yjsExtension'
 import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import { useYjsPersistence } from '@/hooks/useYjsPersistence'
+import { useAsyncGuard } from '@/hooks/useAsyncGuard'
 
 import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
@@ -60,13 +61,7 @@ function LoadingState({ isLocalSynced }: { isLocalSynced: boolean }) {
   )
 }
 
-function ConnectionIndicator({
-  isConnected,
-  isServerSynced
-}: {
-  isConnected: boolean
-  isServerSynced: boolean
-}) {
+function ConnectionIndicator({ isConnected, isServerSynced }: { isConnected: boolean; isServerSynced: boolean }) {
   const getClassName = () => {
     if (isConnected && isServerSynced) return 'text-green-500'
     if (isConnected) return 'text-blue-500'
@@ -129,10 +124,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
-  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(
-    ydoc,
-    isLocalSynced
-  )
+  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(ydoc, isLocalSynced)
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
@@ -143,6 +135,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
   const [isLinterEnabled, setIsLinterEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
+  const asyncGuard = useAsyncGuard()
 
   const isConnected = collaborationStatus === 'connected'
 
@@ -163,6 +156,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   const handleAITrigger = () => {
     if (runAiCommand && isConnected) {
+      asyncGuard.nextId()
       setIsAIGenerating(true)
       runAiCommand('AGENT', { role: 'researcher' })
     }
@@ -199,7 +193,13 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     setSaveStatus('Saved')
     onSaveStatusChange?.('Saved')
 
-    if (isAutoModeEnabled && !isAIGenerating) scheduleAITrigger()
+    if (isAutoModeEnabled) {
+      if (isAIGenerating) {
+        asyncGuard.cancel()
+        setIsAIGenerating(false)
+      }
+      scheduleAITrigger()
+    }
   }, 500)
 
   useEffect(() => {
@@ -212,10 +212,17 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     const handleYjsUpdate = (_update: Uint8Array, origin: unknown) => {
       if (origin !== 'websocket') return
 
+      const requestIdAtResponse = asyncGuard.currentId()
+
+      if (requestIdAtResponse === 0) return
+
       editorInstance.commands.highlightAIText('[AI was here]')
       setTimeout(() => {
         editorInstance.commands.clearAIHighlight()
-        setIsAIGenerating(false)
+        if (asyncGuard.isLatest(requestIdAtResponse)) {
+          setIsAIGenerating(false)
+          asyncGuard.cancel()
+        }
       }, AI_HIGHLIGHT_DURATION_MS)
     }
 

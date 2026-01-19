@@ -227,8 +227,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     };
 
                                     // 0. PRE-CHECK: Verify document has content structure
-                                    if !backend_core::editor::write::has_content_structure(
+                                    if !backend_core::editor::write::is_field_populated(
                                         &state_for_task.editor_doc,
+                                        "content",
                                     ) {
                                         tracing::warn!("Document has no content structure yet");
                                         delegate_to_frontend(
@@ -386,24 +387,38 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     match content.as_str() {
                                         "LINTER" => {
                                             tracing::info!("🤖 toggling linter...");
-                                            let current = crate::mono::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::mono::LINTER_FLAG.store(!current, std::sync::atomic::Ordering::Relaxed);
+                                            let current = crate::mono::LINTER_FLAG
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            crate::mono::LINTER_FLAG.store(
+                                                !current,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
                                             delegate_to_frontend(
                                                 &state_for_task,
                                                 "AI_STATUS",
                                                 "complete",
-                                                &format!("Linter {}", if !current { "enabled" } else { "disabled" }),
+                                                &format!(
+                                                    "Linter {}",
+                                                    if !current { "enabled" } else { "disabled" }
+                                                ),
                                             );
                                         }
                                         "EMOJI_REPLACER" => {
                                             tracing::info!("🤖 toggling emoji replacer...");
-                                            let current = crate::mono::EMOJI_REPLACER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::mono::EMOJI_REPLACER_FLAG.store(!current, std::sync::atomic::Ordering::Relaxed);
+                                            let current = crate::mono::EMOJI_REPLACER_FLAG
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            crate::mono::EMOJI_REPLACER_FLAG.store(
+                                                !current,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
                                             delegate_to_frontend(
                                                 &state_for_task,
                                                 "AI_STATUS",
                                                 "complete",
-                                                &format!("Emoji replacer {}", if !current { "enabled" } else { "disabled" }),
+                                                &format!(
+                                                    "Emoji replacer {}",
+                                                    if !current { "enabled" } else { "disabled" }
+                                                ),
                                             );
                                         }
                                         _ => {

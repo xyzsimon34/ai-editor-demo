@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { refineText, type RefineAction } from '@/services/backend'
 import type { AIOption } from '@/types/ai'
 import { useCompletion } from '@ai-sdk/react'
+import { useAsyncGuard } from './useAsyncGuard'
 
 export interface UseAIGenerationOptions {
   onFinish?: () => void
@@ -17,6 +18,7 @@ export interface UseAIGenerationReturn {
 export function useAIGeneration(options?: UseAIGenerationOptions): UseAIGenerationReturn {
   const [backendCompletion, setBackendCompletion] = useState('')
   const [backendLoading, setBackendLoading] = useState(false)
+  const asyncGuard = useAsyncGuard()
 
   const {
     completion: openaiCompletion,
@@ -36,24 +38,34 @@ export function useAIGeneration(options?: UseAIGenerationOptions): UseAIGenerati
         setBackendLoading(true)
         setBackendCompletion('')
 
-        try {
-          const result = await refineText(prompt, option as RefineAction)
+        await asyncGuard.run(async (isStale) => {
+          try {
+            const result = await refineText(prompt, option as RefineAction)
 
-          let currentText = ''
-          for (let i = 0; i < result.length; i++) {
-            currentText += result[i]
-            setBackendCompletion(currentText)
-            await new Promise((resolve) => setTimeout(resolve, 10))
+            let currentText = ''
+            for (let i = 0; i < result.length; i++) {
+              if (isStale()) return
+
+              currentText += result[i]
+              setBackendCompletion(currentText)
+              await new Promise((resolve) => setTimeout(resolve, 10))
+            }
+
+            if (!isStale()) {
+              options?.onFinish?.()
+            }
+          } catch (error) {
+            if (!isStale()) {
+              const err = error instanceof Error ? error : new Error('Unknown error')
+              options?.onError?.(err)
+              throw err
+            }
+          } finally {
+            if (!isStale()) {
+              setBackendLoading(false)
+            }
           }
-
-          options?.onFinish?.()
-        } catch (error) {
-          const err = error instanceof Error ? error : new Error('Unknown error')
-          options?.onError?.(err)
-          throw err
-        } finally {
-          setBackendLoading(false)
-        }
+        })
       } else if (option === 'continue' || option === 'zap') {
         setBackendCompletion('')
         await complete(prompt, {
