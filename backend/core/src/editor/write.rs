@@ -5,7 +5,8 @@ use std::sync::{
 };
 use std::time::Duration;
 use yrs::{
-    Doc, GetString, Text, Transact, Xml, XmlElementRef, XmlFragment, XmlFragmentRef, XmlTextRef,
+    Doc, GetString, Text, Transact, TransactionMut, Xml, XmlElementPrelim, XmlElementRef,
+    XmlFragment, XmlFragmentRef, XmlOut, XmlTextPrelim,
 };
 
 // ============================================================================
@@ -353,36 +354,33 @@ fn collect_text_nodes_from_elem(
         }
     }
 }
-pub fn append_element_into_element(
-    doc: &Arc<Doc>,
-    field_name: &str,
-    element_name: &str,
+
+pub fn push_element(
+    parent: &XmlOut,
+    new_tag_name: &str,
     content: &str,
     attrs: &[(&str, &str)],
-) -> Result<()> {
-    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
-
-    let mut txn = doc.transact_mut();
-    let len = xml_fragment.len(&txn);
-    let parent_elem = xml_fragment.get(&txn, len - 1);
-
-    let Some(yrs::types::xml::XmlOut::Element(parent_elem)) = parent_elem else {
-        return Err(anyhow::anyhow!("Last element is not an Element"));
+    txn: &mut TransactionMut<'_>,
+) -> Result<XmlElementRef> {
+    let new_elem = match parent {
+        XmlOut::Element(elem) => {
+            let len = elem.len(txn);
+            elem.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
+        }
+        XmlOut::Fragment(fragment) => {
+            let len = fragment.len(txn);
+            fragment.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
+        }
+        _ => return Err(anyhow::anyhow!("Parent is not an element or fragment")),
     };
 
-    let elem_prelim = yrs::types::xml::XmlElementPrelim::empty(element_name);
-
-    let len = parent_elem.len(&txn);
-    let elem = parent_elem.insert(&mut txn, len, elem_prelim);
-
-    let text_prelim = yrs::XmlTextPrelim::new(content);
-
-    elem.insert(&mut txn, 0, text_prelim);
-
     for (key, value) in attrs {
-        elem.insert_attribute(&mut txn, *key, *value);
+        new_elem.insert_attribute(txn, *key, *value);
     }
-    return Ok(());
+
+    new_elem.insert(txn, 0, XmlTextPrelim::new(content));
+
+    Ok(new_elem)
 }
 #[cfg(test)]
 mod tests {
@@ -601,48 +599,23 @@ mod tests {
         assert_eq!(content, "Existing"); // 內容未改變
     }
 
-    #[tokio::test] // 如果是 async 函數，需要配合 test runtime
-    async fn test_append_element_into_element() {
+    #[tokio::test]
+    async fn test_push_element_to_fragment() {
         let doc = Arc::new(Doc::new());
 
         let fragment = doc.get_or_insert_xml_fragment("content");
+        let mut txn = doc.transact_mut();
 
-        // 創建段落結構
-        {
-            let mut txn = doc.transact_mut();
-            let para = yrs::types::xml::XmlElementPrelim::empty("paragraph");
-            fragment.insert(&mut txn, 0, para);
-        }
-
-        append_element_into_element(
-            &doc,
-            "content",
+        let elem = push_element(
+            &XmlOut::Fragment(fragment),
             "paragraph",
             "Hello, world!",
             &[("id", "123")],
+            &mut txn,
         )
         .unwrap();
 
-        let txn = doc.transact();
-        let len = fragment.len(&txn);
-
-        let Some(elem) = fragment.get(&txn, len - 1) else {
-            panic!("Failed to get last element from fragment");
-        };
-
-        let yrs::types::xml::XmlOut::Element(para) = elem else {
-            panic!("Last element is not an Element");
-        };
-
-        let Some(target_elem) = para.get(&txn, 0) else {
-            panic!("Failed to get first child from paragraph");
-        };
-
-        let yrs::types::xml::XmlOut::Element(tar) = target_elem else {
-            panic!("First child is not an element");
-        };
-
-        let Some(text) = tar.get(&txn, 0) else {
+        let Some(text) = elem.get(&txn, 0) else {
             panic!("Failed to get text node");
         };
 
@@ -650,12 +623,59 @@ mod tests {
             panic!("Text node is not a text node");
         };
 
-        let src_attrs = tar.get_attribute(&txn, "id");
+        let src_text = src_text_ref.get_string(&txn);
+        assert_eq!(src_text, "Hello, world!");
+
+        let src_attrs = elem.get_attribute(&txn, "id");
         let attr_value = src_attrs.map(|v| v.to_string(&txn));
 
         assert_eq!(attr_value, Some("123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_push_element_to_element() {
+        let doc = Arc::new(Doc::new());
+
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        {
+            let mut txn = doc.transact_mut();
+            let para = yrs::types::xml::XmlElementPrelim::empty("example");
+            fragment.insert(&mut txn, 0, para);
+        }
+
+        let mut txn = doc.transact_mut();
+        let out = fragment.get(&txn, 0).unwrap();
+
+        let _ = push_element(
+            &out,
+            "paragraph",
+            "Hello, world!",
+            &[("id", "123")],
+            &mut txn,
+        )
+        .unwrap();
+
+        let root_elem = out.into_xml_element().unwrap();
+        let Some(elem) = root_elem.get(&txn, 0) else {
+            panic!("Failed to get text node");
+        };
+        let elem = elem.into_xml_element().unwrap();
+
+        let Some(text) = elem.get(&txn, 0) else {
+            panic!("Failed to get text node");
+        };
+
+        let yrs::types::xml::XmlOut::Text(src_text_ref) = text else {
+            panic!("Text node is not a text node");
+        };
 
         let src_text = src_text_ref.get_string(&txn);
         assert_eq!(src_text, "Hello, world!");
+
+        let src_attrs = elem.get_attribute(&txn, "id");
+        let attr_value = src_attrs.map(|v| v.to_string(&txn));
+
+        assert_eq!(attr_value, Some("123".to_string()));
     }
 }
