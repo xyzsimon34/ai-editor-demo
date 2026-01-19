@@ -1,13 +1,14 @@
 use crate::llm::tools::extender;
 use crate::llm::tools::linter;
 use anyhow::Result;
-use std::sync::Arc;
-use yrs::{Doc, Transact, Xml, XmlFragment};
+use std::sync::{Arc, atomic::AtomicU64};
+use yrs::{Doc, Transact, XmlFragment};
 pub async fn new_composer(
     api_key: &str,
     role: &str,
     doc: &Arc<Doc>,
-    _user_state: &crate::editor::UserWritingState,
+    user_last_used_at: Arc<AtomicU64>,
+    user_writing_timeout_ms: u64,
 ) -> Result<()> {
     let api_key = api_key.to_string();
     let article_draft = crate::editor::get_doc_content(doc);
@@ -17,8 +18,15 @@ pub async fn new_composer(
     println!("result: {}", result);
 
     // 使用 format_word_stream 預處理單詞（添加空格和換行符）
-    // let words = crate::editor::format_word_stream(&result);
-    // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
+    let words = crate::editor::format_word_stream(&result);
+    crate::editor::append_ai_content_word_by_word(
+        doc,
+        words,
+        100,
+        user_last_used_at,
+        user_writing_timeout_ms,
+    )
+    .await?;
     let fragment = doc.get_or_insert_xml_fragment("content");
     let mut txn = doc.transact_mut();
 

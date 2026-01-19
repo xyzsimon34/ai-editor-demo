@@ -1,6 +1,7 @@
 use crate::{api::state::MessageStructure, http, opts::*};
 use atb_cli_utils::AtbCli;
 use backend_core::{editor, sqlx_postgres, temporal};
+use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 use std::{
     sync::Arc,
@@ -46,24 +47,36 @@ pub async fn run(
     let (broadcast_tx, _) = broadcast::channel::<MessageStructure>(100);
 
     // Create User Writing State for user writing detection
-    let user_writing_state = Arc::new(editor::UserWritingState::new(2000)); // 2 second timeout
     let (notify_tx, mut notify_rx) = watch::channel(Instant::now());
 
     // Setup Observer: When Yrs changes (by User OR AI), broadcast the delta
     let tx_clone = broadcast_tx.clone();
     let _sub = doc.observe_update_v1(move |_txn, update_event| {
         let update = update_event.update.to_vec();
+        tracing::info!(
+            "📡 Yjs document updated, broadcasting {} bytes to {} subscribers",
+            update.len(),
+            tx_clone.receiver_count()
+        );
         // Send binary update to all connected clients
-        let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
+        let send_result = tx_clone.send(MessageStructure::YjsUpdate(update));
+        if send_result.is_err() {
+            tracing::warn!("⚠️ Failed to broadcast Yjs update (no subscribers?)");
+        } else {
+            tracing::info!(
+                "✅ Yjs update broadcasted successfully to {} subscribers",
+                tx_clone.receiver_count()
+            );
+        }
         let _ = notify_tx.send(Instant::now());
     });
+    tracing::info!("👂 Yjs update observer registered and ready");
 
     // Clone values before moving into the async task
     let api_key_for_task = opts.openai_api_key.clone();
     let doc_for_task = doc.clone();
     let broadcast_tx_for_task = broadcast_tx.clone();
 
-    
     tokio::spawn(async move {
         tracing::info!("🚀 Smart Auto-linter started (Debounce: 5s)");
         let mut before_content = "".to_string();
@@ -112,7 +125,8 @@ pub async fn run(
 
             if emoji_replacer_enabled {
                 tracing::info!("🤖 Calling AI Emoji Replacer...");
-                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await {
+                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await
+                {
                     Ok(_) => {
                         tracing::info!("✅ AI emoji replacer successful");
                     }
@@ -122,10 +136,15 @@ pub async fn run(
 
             if backseater_enabled {
                 tracing::info!("💬 Calling AI Backseater...");
-                match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task).await {
+                match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task)
+                    .await
+                {
                     Ok(comments) => {
                         if !comments.is_empty() {
-                            tracing::info!("✅ Generated {} comments from backseater", comments.len());
+                            tracing::info!(
+                                "✅ Generated {} comments from backseater",
+                                comments.len()
+                            );
                             // Send each comment to frontend via broadcast channel
                             for comment in comments {
                                 let comment_json = serde_json::json!({
@@ -134,8 +153,13 @@ pub async fn run(
                                     "comment": comment.comment,
                                     "color_hex": comment.color_hex
                                 });
-                                if let Err(e) = broadcast_tx_for_task.send(MessageStructure::AiCommand(comment_json.to_string())) {
-                                    tracing::warn!("Failed to broadcast backseater comment: {:?}", e);
+                                if let Err(e) = broadcast_tx_for_task
+                                    .send(MessageStructure::AiCommand(comment_json.to_string()))
+                                {
+                                    tracing::warn!(
+                                        "Failed to broadcast backseater comment: {:?}",
+                                        e
+                                    );
                                 }
                             }
                         } else {
@@ -152,6 +176,9 @@ pub async fn run(
         tracing::info!("🔌 Linter task exiting");
     });
 
+    let user_last_used_at = Arc::new(AtomicU64::new(Instant::now().elapsed().as_millis() as u64));
+    let user_writing_timeout_ms = opts.user_writing_timeout_ms;
+
     http::start_http(
         pg_pool,
         http_client,
@@ -160,7 +187,8 @@ pub async fn run(
         opts.openai_api_key,
         doc,
         broadcast_tx,
-        Some(user_writing_state),
+        user_last_used_at,
+        user_writing_timeout_ms,
     )
     .await?;
 

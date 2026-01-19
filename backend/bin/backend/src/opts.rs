@@ -169,4 +169,7 @@ pub struct WorkerOpts {
 pub struct Opts {
     #[arg(long, env = "OPENAI_API_KEY")]
     pub openai_api_key: String,
+
+    #[arg(long, env = "BACKEND_USER_WRITING_TIMEOUT_MS", default_value = "2000")]
+    pub user_writing_timeout_ms: u64,
 }

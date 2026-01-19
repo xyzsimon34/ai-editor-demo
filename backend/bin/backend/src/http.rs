@@ -1,13 +1,16 @@
 use crate::{api, opts::*};
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, atomic::AtomicU64},
+    time::Duration,
+};
 
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
 use atb_tokio_ext::shutdown_signal;
-use backend_core::{editor, sqlx_postgres, temporal};
+use backend_core::{sqlx_postgres, temporal};
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, time::Instant};
 pub async fn run(
     db_opts: DatabaseOpts,
     http_opts: HttpOpts,
@@ -34,6 +37,9 @@ pub async fn run(
         let _ = tx_clone.send(MessageStructure::YjsUpdate(update));
     });
 
+    let user_last_used_at = Arc::new(AtomicU64::new(Instant::now().elapsed().as_millis() as u64));
+    let user_writing_timeout_ms = opts.user_writing_timeout_ms;
+
     start_http(
         pg_pool,
         client,
@@ -42,7 +48,8 @@ pub async fn run(
         opts.openai_api_key,
         doc,
         broadcast_tx,
-        None, // user_writing_state: None for http mode
+        user_last_used_at,
+        user_writing_timeout_ms,
     )
     .await
 }
@@ -55,7 +62,8 @@ pub async fn start_http(
     api_key: String,
     editor_doc: std::sync::Arc<yrs::Doc>,
     editor_broadcast_tx: tokio::sync::broadcast::Sender<MessageStructure>,
-    user_writing_state: Option<Arc<editor::UserWritingState>>,
+    user_last_used_at: Arc<AtomicU64>,
+    user_writing_timeout_ms: u64,
 ) -> anyhow::Result<()> {
     let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
     let schema = crate::graphql::schema()
@@ -72,7 +80,8 @@ pub async fn start_http(
         api_key,
         editor_doc,
         editor_broadcast_tx,
-        user_writing_state,
+        user_last_used_at,
+        user_writing_timeout_ms,
     );
 
     tracing::info!("http listening on {}", http_opts.host);
