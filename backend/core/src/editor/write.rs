@@ -4,7 +4,10 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use yrs::{Doc, GetString, Text, Transact, XmlFragment};
+use yrs::{
+    Doc, GetString, Text, Transact, TransactionMut, Xml, XmlElementPrelim, XmlElementRef,
+    XmlFragment, XmlFragmentRef, XmlOut, XmlTextPrelim,
+};
 
 // ============================================================================
 // User Writing Detection Context
@@ -72,37 +75,32 @@ impl UserWritingState {
 ///
 /// # Example
 /// ```
-/// let words = prepare_words("Hello World");
+/// let words = format_word_stream("Hello World");
 /// // 結果: vec!["Hello ", "World\n"]
 /// ```
-pub fn prepare_words(content: &str) -> Vec<String> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
+pub fn format_word_stream(content: &str) -> Vec<String> {
+    let words: Vec<&str> = content.split_whitespace().collect();
 
-    let words: Vec<&str> = trimmed.split_whitespace().collect();
     if words.is_empty() {
         return Vec::new();
     }
 
-    words
+    let mut result: Vec<String> = words
         .iter()
-        .enumerate()
-        .map(|(index, word)| {
-            let is_last = index == words.len() - 1;
-            if is_last {
-                format!("{}\n", word) // 最後一個單詞加換行
-            } else {
-                format!("{} ", word) // 其他單詞加空格
-            }
-        })
-        .collect()
+        .take(words.len() - 1)
+        .map(|&w| format!("{} ", w))
+        .collect();
+
+    if let Some(last) = words.last() {
+        result.push(format!("{}\n", last));
+    }
+
+    result
 }
 
 /// Check if the document has content structure (at least one paragraph)
-pub fn has_content_structure(doc: &Arc<Doc>) -> bool {
-    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+pub fn is_field_populated(doc: &Arc<Doc>, field_name: &str) -> bool {
+    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
     let txn = doc.transact();
     xml_fragment.len(&txn) > 0
 }
@@ -135,6 +133,12 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
     if content.trim().is_empty() {
         return Ok(()); // 空內容不處理
     }
+    // 如果沒有內容，需要等待用戶先創建結構
+    if is_field_populated(doc, "content") {
+        return Err(anyhow::anyhow!(
+            "Document has no content structure yet. User needs to create content first."
+        ));
+    }
 
     let xml_fragment = doc.get_or_insert_xml_fragment("content");
     let mut txn = doc.transact_mut();
@@ -142,19 +146,11 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
     // 獲取 fragment 長度
     let len = xml_fragment.len(&txn);
 
-    // 如果沒有內容，需要等待用戶先創建結構
-    if len == 0 {
-        return Err(anyhow::anyhow!(
-            "Document has no content structure yet. User needs to create content first."
-        ));
-    }
-
     // 獲取最後一個元素（應該是段落）
     let Some(last_elem) = xml_fragment.get(&txn, len - 1) else {
         return Err(anyhow::anyhow!("Failed to get last element from fragment"));
     };
 
-    // 檢查是否為段落元素
     let yrs::types::xml::XmlOut::Element(para) = last_elem else {
         return Err(anyhow::anyhow!("Last element is not an Element"));
     };
@@ -271,7 +267,7 @@ pub fn apply_replacements(
     }
 
     let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
-    
+
     // CRITICAL: XmlTextRef references are tied to the transaction they were created in.
     // We MUST collect them within the write transaction, not before it.
     let mut txn = doc.transact_mut();
@@ -282,14 +278,14 @@ pub fn apply_replacements(
     for text_ref in text_nodes {
         let current_text = text_ref.get_string(&txn);
         let mut new_text = current_text.clone();
-        
+
         // Apply all replacements
         for replacement in replacements {
             if !replacement.replace.is_empty() {
                 new_text = new_text.replace(&replacement.replace, &replacement.with);
             }
         }
-        
+
         // Only update if text changed
         if new_text != current_text {
             let len = text_ref.len(&txn);
@@ -316,7 +312,7 @@ fn collect_text_nodes(
     collector: &mut Vec<yrs::XmlTextRef>,
 ) {
     use yrs::types::xml::XmlOut;
-    
+
     let len = fragment.len(txn);
     for i in 0..len {
         if let Some(child) = fragment.get(txn, i) {
@@ -342,7 +338,7 @@ fn collect_text_nodes_from_elem(
     collector: &mut Vec<yrs::XmlTextRef>,
 ) {
     use yrs::types::xml::XmlOut;
-    
+
     let len = elem.len(txn);
     for i in 0..len {
         if let Some(child) = elem.get(txn, i) {
@@ -359,10 +355,37 @@ fn collect_text_nodes_from_elem(
     }
 }
 
+pub fn push_element(
+    parent: &XmlOut,
+    new_tag_name: &str,
+    content: &str,
+    attrs: &[(&str, &str)],
+    txn: &mut TransactionMut<'_>,
+) -> Result<XmlElementRef> {
+    let new_elem = match parent {
+        XmlOut::Element(elem) => {
+            let len = elem.len(txn);
+            elem.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
+        }
+        XmlOut::Fragment(fragment) => {
+            let len = fragment.len(txn);
+            fragment.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
+        }
+        _ => return Err(anyhow::anyhow!("Parent is not an element or fragment")),
+    };
+
+    for (key, value) in attrs {
+        new_elem.insert_attribute(txn, *key, *value);
+    }
+
+    new_elem.insert(txn, 0, XmlTextPrelim::new(content));
+
+    Ok(new_elem)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yrs::XmlTextPrelim;
+    use yrs::{XmlOut, XmlTextPrelim};
 
     #[test]
     fn test_append_ai_content_to_empty_doc() {
@@ -435,20 +458,35 @@ mod tests {
     }
 
     #[test]
-    fn test_prepare_words() {
-        let words = prepare_words("Hello World");
+    fn test_format_word_stream() {
+        let words = format_word_stream("Hello World");
         assert_eq!(words, vec!["Hello ", "World\n"]);
 
-        let words2 = prepare_words("Single");
+        let words2 = format_word_stream("Single");
         assert_eq!(words2, vec!["Single\n"]);
 
-        let words3 = prepare_words("  Multiple   Words   Here  ");
+        let words3 = format_word_stream("  Multiple   Words   Here  ");
         assert_eq!(words3, vec!["Multiple ", "Words ", "Here\n"]);
 
-        let empty = prepare_words("");
+        let words_with_dot = format_word_stream("Hello. World.");
+        assert_eq!(words_with_dot, vec!["Hello. ", "World.\n"]);
+
+        let words_with_comma = format_word_stream("Hello, World.");
+        assert_eq!(words_with_comma, vec!["Hello, ", "World.\n"]);
+
+        let words_with_question_mark = format_word_stream("Hello World?");
+        assert_eq!(words_with_question_mark, vec!["Hello ", "World?\n"]);
+
+        let words_with_exclamation_mark = format_word_stream("Hello World!");
+        assert_eq!(words_with_exclamation_mark, vec!["Hello ", "World!\n"]);
+
+        let words_with_colon = format_word_stream("Hello: World:");
+        assert_eq!(words_with_colon, vec!["Hello: ", "World:\n"]);
+
+        let empty = format_word_stream("");
         assert!(empty.is_empty());
 
-        let whitespace = prepare_words("   ");
+        let whitespace = format_word_stream("   ");
         assert!(whitespace.is_empty());
     }
 
@@ -472,7 +510,7 @@ mod tests {
         }
 
         let user_state = UserWritingState::new(2000);
-        let words = prepare_words("Hello World");
+        let words = format_word_stream("Hello World");
 
         // 開始追加
         let doc_clone = doc.clone();
@@ -515,7 +553,7 @@ mod tests {
         }
 
         let user_state = UserWritingState::new(2000);
-        let words = prepare_words("Test Word");
+        let words = format_word_stream("Test Word");
 
         // 完整追加（用戶未中斷）
         let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
@@ -551,7 +589,7 @@ mod tests {
         // 標記用戶正在寫入
         user_state.mark_user_writing();
 
-        let words = prepare_words("Should Not Append");
+        let words = format_word_stream("Should Not Append");
 
         // 嘗試追加，但應該被跳過
         let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
@@ -559,5 +597,85 @@ mod tests {
 
         let content = crate::editor::read::get_doc_content(&doc);
         assert_eq!(content, "Existing"); // 內容未改變
+    }
+
+    #[tokio::test]
+    async fn test_push_element_to_fragment() {
+        let doc = Arc::new(Doc::new());
+
+        let fragment = doc.get_or_insert_xml_fragment("content");
+        let mut txn = doc.transact_mut();
+
+        let elem = push_element(
+            &XmlOut::Fragment(fragment),
+            "paragraph",
+            "Hello, world!",
+            &[("id", "123")],
+            &mut txn,
+        )
+        .unwrap();
+
+        let Some(text) = elem.get(&txn, 0) else {
+            panic!("Failed to get text node");
+        };
+
+        let yrs::types::xml::XmlOut::Text(src_text_ref) = text else {
+            panic!("Text node is not a text node");
+        };
+
+        let src_text = src_text_ref.get_string(&txn);
+        assert_eq!(src_text, "Hello, world!");
+
+        let src_attrs = elem.get_attribute(&txn, "id");
+        let attr_value = src_attrs.map(|v| v.to_string(&txn));
+
+        assert_eq!(attr_value, Some("123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_push_element_to_element() {
+        let doc = Arc::new(Doc::new());
+
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        {
+            let mut txn = doc.transact_mut();
+            let para = yrs::types::xml::XmlElementPrelim::empty("example");
+            fragment.insert(&mut txn, 0, para);
+        }
+
+        let mut txn = doc.transact_mut();
+        let out = fragment.get(&txn, 0).unwrap();
+
+        let _ = push_element(
+            &out,
+            "paragraph",
+            "Hello, world!",
+            &[("id", "123")],
+            &mut txn,
+        )
+        .unwrap();
+
+        let root_elem = out.into_xml_element().unwrap();
+        let Some(elem) = root_elem.get(&txn, 0) else {
+            panic!("Failed to get text node");
+        };
+        let elem = elem.into_xml_element().unwrap();
+
+        let Some(text) = elem.get(&txn, 0) else {
+            panic!("Failed to get text node");
+        };
+
+        let yrs::types::xml::XmlOut::Text(src_text_ref) = text else {
+            panic!("Text node is not a text node");
+        };
+
+        let src_text = src_text_ref.get_string(&txn);
+        assert_eq!(src_text, "Hello, world!");
+
+        let src_attrs = elem.get_attribute(&txn, "id");
+        let attr_value = src_attrs.map(|v| v.to_string(&txn));
+
+        assert_eq!(attr_value, Some("123".to_string()));
     }
 }
