@@ -11,7 +11,13 @@ interface AiCommandPayload {
 
 interface AIStatusMessage {
   type: 'AI_STATUS'
-  status: 'thinking' | 'done'
+  status: 'thinking' | 'done' | 'error' | 'complete'
+  message: string
+}
+
+interface AISuggestionMessage {
+  type: 'AI_SUGGESTION'
+  status: 'complete'
   message: string
 }
 
@@ -34,9 +40,9 @@ interface BackseaterComment {
 }
 
 type AiPayload = Record<string, unknown> | string | number | boolean | null
-type AIStatus = 'idle' | 'thinking' | 'done'
+type AIStatus = 'idle' | 'thinking' | 'done' | 'error' | 'complete'
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
-type WebSocketMessage = AIStatusMessage | SyncCompleteMessage
+type WebSocketMessage = AIStatusMessage | SyncCompleteMessage | AISuggestionMessage
 
 const RECONNECT_DELAY_MS = 3000
 const CLEAN_CLOSE_CODE = 1000
@@ -49,13 +55,22 @@ function isWebSocketOpen(socket: WebSocket | null): boolean {
   return socket?.readyState === WebSocket.OPEN
 }
 
-export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollaborationReturn {
+export function useCollaboration(
+  ydoc: Y.Doc,
+  isLocalSynced: boolean,
+  onAiSuggestion?: (text: string) => void
+): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
   const [isServerSynced, setIsServerSynced] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const hasReceivedFirstUpdate = useRef(false)
+  const onAiSuggestionRef = useRef(onAiSuggestion)
+
+  useEffect(() => {
+    onAiSuggestionRef.current = onAiSuggestion
+  }, [onAiSuggestion])
 
   const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
@@ -100,8 +115,14 @@ export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollab
     const handleJsonMessage = (data: string) => {
       try {
         const parsed = JSON.parse(data) as WebSocketMessage
-        if (parsed.type === 'AI_STATUS') setAiStatus(parsed.status)
-        else if (parsed.type === 'SYNC_COMPLETE') setIsServerSynced(true)
+        if (parsed.type === 'AI_STATUS') {
+          setAiStatus(parsed.status)
+        } else if (parsed.type === 'SYNC_COMPLETE') {
+          setIsServerSynced(true)
+        } else if (parsed.type === 'AI_SUGGESTION') {
+          onAiSuggestionRef.current?.(parsed.message)
+          setAiStatus('done')
+        }
       } catch {
         // Ignore non-JSON messages
       }

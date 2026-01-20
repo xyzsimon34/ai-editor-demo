@@ -70,6 +70,7 @@ pub struct AiCommand {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AgentPayload {
     pub role: String,
+    pub mode: Option<String>,
 }
 
 pub struct RefinerPayload {

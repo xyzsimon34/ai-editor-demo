@@ -9,13 +9,18 @@ pub async fn new_composer(
     doc: &Arc<Doc>,
     user_last_used_at: Arc<AtomicU64>,
     user_writing_timeout_ms: u64,
-) -> Result<()> {
+    preview_mode: bool,
+) -> Result<Option<String>> {
     let api_key = api_key.to_string();
     let article_draft = crate::editor::get_doc_content(doc);
     let result = extender::execute_tool(&article_draft, role, &api_key)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to execute tool: {}", e))?;
     println!("result: {}", result);
+
+    if preview_mode {
+        return Ok(Some(result));
+    }
 
     // 使用 format_word_stream 預處理單詞（添加空格和換行符）
     let words = crate::editor::format_word_stream(&result);
@@ -42,7 +47,7 @@ pub async fn new_composer(
         tracing::warn!("⚠️ Fragment has no root element to append AI content to");
     }
 
-    Ok(())
+    Ok(None)
 }
 
 pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {

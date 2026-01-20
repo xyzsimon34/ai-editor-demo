@@ -21,6 +21,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import * as Y from 'yjs'
 
 import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
+import { AIGhostExtension } from '@/lib/aiGhostExtension'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
@@ -122,14 +123,22 @@ function requestPersistentStorage() {
 export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [ydoc] = useState(() => new Y.Doc({ gc: false }))
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
+  const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
+
+  const handleAiSuggestion = (text: string) => {
+    editorInstance?.commands.setAISuggestion(text)
+  }
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
-  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(ydoc, isLocalSynced)
+  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(
+    ydoc,
+    isLocalSynced,
+    handleAiSuggestion
+  )
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
   const [characterCount, setCharacterCount] = useState<number>()
-  const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
   const [isGenerativeMenuOpen, setIsGenerativeMenuOpen] = useState(false)
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
   const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
@@ -151,6 +160,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     ...getExtensions(),
     ...(yjsExtension ? [yjsExtension] : []),
     AIHighlightDecorationExtension,
+    AIGhostExtension,
     slashCommand
   ]
 
@@ -158,7 +168,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     if (runAiCommand && isConnected) {
       asyncGuard.nextId()
       setIsAIGenerating(true)
-      runAiCommand('AGENT', { role: 'researcher' })
+      runAiCommand('AGENT', { role: 'researcher', mode: 'preview' })
     }
   }
 
@@ -179,7 +189,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     enabled: isAutoModeEnabled,
     debounceMs: 3000,
     minCharacters: 10,
-    minChangeThreshold: 10,
+    minChangeThreshold: 1,
     onTrigger: handleAITrigger
   })
 
@@ -194,9 +204,13 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     onSaveStatusChange?.('Saved')
 
     if (isAutoModeEnabled) {
+      // 如果 isAIGenerating 為 true，表示我們還在等待或展示建議
+      // 這時候如果使用者繼續打字，我們應該取消當前的 AI 狀態
       if (isAIGenerating) {
         asyncGuard.cancel()
         setIsAIGenerating(false)
+        // 重要：同時清除任何殘留的 Ghost Text，避免狀態不同步
+        editor.commands.clearAISuggestion()
       }
       scheduleAITrigger()
     }

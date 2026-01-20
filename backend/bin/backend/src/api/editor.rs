@@ -188,10 +188,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     tracing::info!("🤖 processing {}...", cmd_action);
 
                                     // Extract role from Agent payload
-                                    let role = match cmd_payload {
+                                    let (role, mode) = match cmd_payload {
                                         Some(crate::api::state::AiCommandPayload::Agent(
                                             agent_payload,
-                                        )) => agent_payload.role,
+                                        )) => (agent_payload.role, agent_payload.mode),
                                         Some(crate::api::state::AiCommandPayload::Refiner(_)) => {
                                             tracing::error!(
                                                 "Agent command received Refiner payload"
@@ -237,9 +237,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 1. AI PROCESSING PHASE
                                     // Create the input struct your existing processor expects
                                     let api_key = &state_for_task.api_key;
+                                    let preview_mode = mode.as_deref() == Some("preview");
 
                                     // Select the correct function based on action
-                                    let result: Result<String, anyhow::Error> = match cmd_action
+                                    let result: Result<Option<String>, anyhow::Error> = match cmd_action
                                         .as_str()
                                     {
                                         // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
@@ -253,11 +254,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 &state_for_task.editor_doc,
                                                 user_last_used_at,
                                                 state_for_task.user_writing_timeout_ms,
+                                                preview_mode
                                             )
                                             .await
                                             {
-                                                Ok(_) => {
-                                                    Ok("Agent executed successfully".to_string())
+                                                Ok(text) => {
+                                                    Ok(text)
                                                 }
                                                 Err(e) => {
                                                     // Check if it's the "no content" error and handle gracefully
@@ -282,15 +284,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
-                                        Ok(_output) => {
-                                            // The agent modifies the doc directly via new_composer
-                                            tracing::info!("✅ Applied AI changes via CRDT");
-                                            delegate_to_frontend(
-                                                &state_for_task,
-                                                "AI_STATUS",
-                                                "complete",
-                                                "AI agent finished successfully",
-                                            );
+                                        Ok(output) => {
+                                            if let Some(text) = output {
+                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
+                                                delegate_to_frontend(
+                                                    &state_for_task,
+                                                    "AI_SUGGESTION",
+                                                    "complete",
+                                                    &text,
+                                                );
+                                            } else {
+                                                // The agent modifies the doc directly via new_composer
+                                                tracing::info!("✅ Applied AI changes via CRDT");
+                                                delegate_to_frontend(
+                                                    &state_for_task,
+                                                    "AI_STATUS",
+                                                    "complete",
+                                                    "AI agent finished successfully",
+                                                );
+                                            }
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();
