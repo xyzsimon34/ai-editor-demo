@@ -20,15 +20,15 @@ import {
 import { useDebouncedCallback } from 'use-debounce'
 import * as Y from 'yjs'
 
-import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
 import { AIGhostExtension } from '@/lib/aiGhostExtension'
+import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
+import { useAsyncGuard } from '@/hooks/useAsyncGuard'
 import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import { useYjsPersistence } from '@/hooks/useYjsPersistence'
-import { useAsyncGuard } from '@/hooks/useAsyncGuard'
 
 import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
@@ -130,11 +130,12 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   }
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
-  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(
-    ydoc,
-    isLocalSynced,
-    handleAiSuggestion
-  )
+  const {
+    status: collaborationStatus,
+    aiStatus,
+    isServerSynced,
+    runAiCommand
+  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion)
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
@@ -320,9 +321,16 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
                 'prose prose-lg prose-invert prose-headings:font-title font-default focus:outline-none max-w-3xl mx-auto px-8 py-16 text-zinc-200'
             }
           }}
-          onUpdate={({ editor }) => {
+          onUpdate={({ editor, transaction }) => {
             setEditorInstance(editor)
-            debouncedUpdates(editor)
+
+            const aiMeta = transaction.getMeta('aiGhost')
+            const isAIOperation = aiMeta?.action === 'set' || aiMeta?.action === 'clear'
+
+            if (!isAIOperation) {
+              debouncedUpdates(editor)
+            }
+
             setSaveStatus('Unsaved')
             onSaveStatusChange?.('Unsaved')
           }}
