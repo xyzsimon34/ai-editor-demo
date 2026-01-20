@@ -1,65 +1,25 @@
 use anyhow::Result;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
+
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 use yrs::{
     Doc, GetString, Text, Transact, TransactionMut, Xml, XmlElementPrelim, XmlElementRef,
-    XmlFragment, XmlFragmentRef, XmlOut, XmlTextPrelim,
+    XmlFragment, XmlOut, XmlTextPrelim,
 };
 
-// ============================================================================
-// User Writing Detection Context
-// ============================================================================
+fn is_user_writing(last_used_at: &Arc<AtomicU64>, timeout_ms: u64) -> bool {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis() as u64;
+    let last_used = last_used_at.load(Ordering::Relaxed);
 
-/// 用戶寫入狀態，用於追蹤用戶是否正在寫入
-///
-/// 當用戶正在輸入時，AI 應該暫停追加內容，避免衝突
-#[derive(Clone)]
-pub struct UserWritingState {
-    /// 標記用戶是否正在寫入
-    pub user_writing_flag: Arc<AtomicBool>,
-    /// 用戶停止寫入的閾值（毫秒），超過此時間後自動清除標記
-    pub writing_timeout_ms: u64,
+    (now - last_used) < timeout_ms
 }
-
-impl UserWritingState {
-    /// 創建新的寫入上下文
-    ///
-    /// # Arguments
-    /// * `writing_timeout_ms` - 用戶停止寫入的閾值（毫秒）
-    pub fn new(writing_timeout_ms: u64) -> Self {
-        Self {
-            user_writing_flag: Arc::new(AtomicBool::new(false)),
-            writing_timeout_ms,
-        }
-    }
-
-    /// 檢查用戶是否正在寫入
-    ///
-    /// # Returns
-    /// `true` 如果用戶正在寫入，AI 應該暫停
-    /// `false` 如果用戶未在寫入，AI 可以繼續
-    pub fn is_user_writing(&self) -> bool {
-        self.user_writing_flag.load(Ordering::Relaxed)
-    }
-
-    /// 標記用戶開始寫入
-    ///
-    /// 當收到用戶輸入時調用此方法
-    pub fn mark_user_writing(&self) {
-        self.user_writing_flag.store(true, Ordering::Relaxed);
-    }
-
-    /// 清除用戶寫入標記
-    ///
-    /// 通常在定時器到期後自動調用
-    pub fn clear_user_writing(&self) {
-        self.user_writing_flag.store(false, Ordering::Relaxed);
-    }
-}
-
 // ============================================================================
 // Word Preparation
 // ============================================================================
@@ -134,7 +94,7 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
         return Ok(()); // 空內容不處理
     }
     // 如果沒有內容，需要等待用戶先創建結構
-    if is_field_populated(doc, "content") {
+    if !is_field_populated(doc, "content") {
         return Err(anyhow::anyhow!(
             "Document has no content structure yet. User needs to create content first."
         ));
@@ -211,14 +171,14 @@ pub async fn append_ai_content_word_by_word(
     doc: &Arc<Doc>,
     words: Vec<String>,
     delay_ms: u64,
-    user_state: &UserWritingState,
+    user_last_used_at: Arc<AtomicU64>,
+    user_writing_timeout_ms: u64,
 ) -> Result<()> {
     if words.is_empty() {
         return Ok(());
     }
-
     // 在開始前檢查一次
-    if user_state.is_user_writing() {
+    if is_user_writing(&user_last_used_at, user_writing_timeout_ms) {
         tracing::info!("User is writing, skipping AI append");
         return Ok(()); // 直接拋棄所有單詞
     }
@@ -226,7 +186,7 @@ pub async fn append_ai_content_word_by_word(
     // 遍歷預處理的單詞列表
     for word in words {
         // 每次追加前再次檢查用戶是否開始寫入
-        if user_state.is_user_writing() {
+        if is_user_writing(&user_last_used_at, user_writing_timeout_ms) {
             tracing::info!(
                 "User started writing, stopping AI append and discarding remaining words"
             );
@@ -499,7 +459,7 @@ mod tests {
         let doc = Arc::new(Doc::new());
         let fragment = doc.get_or_insert_xml_fragment("content");
 
-        // 創建段落結構
+        // create dummy data
         {
             let mut txn = doc.transact_mut();
             let para = yrs::types::xml::XmlElementPrelim::empty("paragraph");
@@ -513,19 +473,44 @@ mod tests {
             }
         }
 
-        let user_state = UserWritingState::new(2000);
-        let words = format_word_stream("Hello World");
-
+        let words = format_word_stream("Hello World. This is a test.");
+        let delay_ms = 10;
         // 開始追加
         let doc_clone = doc.clone();
-        let user_state_clone = user_state.clone();
+        let user_last_used_at = {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis() as u64;
+            let one_day_ms = 24 * 60 * 60 * 1000;
+            Arc::new(AtomicU64::new(now.saturating_sub(one_day_ms)))
+        };
+        let user_writing_timeout_ms = 100;
+
+        let user_last_used_at_for_update = user_last_used_at.clone();
+
         let append_task = tokio::spawn(async move {
-            append_ai_content_word_by_word(&doc_clone, words, 50, &user_state_clone).await
+            append_ai_content_word_by_word(
+                &doc_clone,
+                words,
+                delay_ms,
+                user_last_used_at,
+                user_writing_timeout_ms,
+            )
+            .await
         });
 
-        // 模擬用戶開始寫入（在第一個單詞後）
-        tokio::time::sleep(Duration::from_millis(60)).await;
-        user_state.mark_user_writing();
+        // // 模擬用戶開始寫入（在第一個單詞後）
+        tokio::time::sleep(Duration::from_millis(delay_ms + 4)).await;
+
+        // // 模擬用戶開始寫入：更新 user_last_used_at 為當前時間
+        user_last_used_at_for_update.store(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis() as u64,
+            Ordering::Relaxed,
+        );
 
         // 等待追加任務完成
         let result = append_task.await.unwrap();
@@ -533,8 +518,8 @@ mod tests {
 
         // 驗證只有部分內容被追加（因為用戶中斷）
         let content = crate::editor::read::get_doc_content(&doc);
-        assert!(content.contains("Existing"));
-        // 可能只有 "Hello " 被追加，或者都沒有，取決於時機
+        println!("content: {}", content);
+        assert_eq!(content, "Existing Hello World.")
     }
 
     #[tokio::test]
@@ -556,17 +541,22 @@ mod tests {
             }
         }
 
-        let user_state = UserWritingState::new(2000);
-        let words = format_word_stream("Test Word");
+        let words = format_word_stream("Hello World. This is a test.");
 
-        // 完整追加（用戶未中斷）
-        let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
+        let user_last_used_at = {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis() as u64;
+            let one_day_ms = 24 * 60 * 60 * 1000;
+            Arc::new(AtomicU64::new(now.saturating_sub(one_day_ms)))
+        };
+
+        let result = append_ai_content_word_by_word(&doc, words, 0, user_last_used_at, 0).await;
         assert!(result.is_ok());
 
         let content = crate::editor::read::get_doc_content(&doc);
-        assert!(content.contains("Existing"));
-        assert!(content.contains("Test"));
-        assert!(content.contains("Word"));
+        assert_eq!(content, "Existing Hello World. This is a test.");
     }
 
     #[tokio::test]
@@ -588,19 +578,22 @@ mod tests {
             }
         }
 
-        let user_state = UserWritingState::new(2000);
-
-        // 標記用戶正在寫入
-        user_state.mark_user_writing();
-
         let words = format_word_stream("Should Not Append");
 
+        let user_last_used_at = {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis() as u64;
+            Arc::new(AtomicU64::new(now))
+        };
         // 嘗試追加，但應該被跳過
-        let result = append_ai_content_word_by_word(&doc, words, 10, &user_state).await;
+        let result =
+            append_ai_content_word_by_word(&doc, words, 100, user_last_used_at, 1000).await;
         assert!(result.is_ok()); // 返回 Ok，但沒有追加內容
 
         let content = crate::editor::read::get_doc_content(&doc);
-        assert_eq!(content, "Existing"); // 內容未改變
+        assert_eq!(content, "Existing");
     }
 
     #[tokio::test]
@@ -660,6 +653,7 @@ mod tests {
         )
         .unwrap();
 
+        // use root element to get new element and check out its attributes and content
         let root_elem = out.into_xml_element().unwrap();
         let Some(elem) = root_elem.get(&txn, 0) else {
             panic!("Failed to get text node");
