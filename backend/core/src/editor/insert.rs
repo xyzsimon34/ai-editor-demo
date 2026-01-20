@@ -2,14 +2,13 @@ use anyhow::Result;
 use std::sync::Arc;
 use yrs::{Doc, Text, Transact, XmlFragment};
 
-/// 在用戶游標停頓位置插入 AI 生成的內容
-///
-/// 使用 StickyIndex 來追蹤游標位置，即使文檔結構發生變化也能正確插入
+/// 在 paragraph 中指定 textref 的 sticky point 位置插入 AI 內容
 ///
 /// # Arguments
 /// * `doc` - 共享的 Yrs Doc 實例
-/// * `text` - 文字節點引用
-/// * `user_cursor_pos` - 用戶游標在該文字節點中的位置（字符索引）
+/// * `paragraph_index` - paragraph 在 fragment 中的索引
+/// * `textref_index` - 在 paragraph 中第幾個 textref（從 0 開始）
+/// * `offset` - 在該 textref 中的字符位置（從 0 開始）
 /// * `content` - 要插入的 AI 生成內容
 ///
 /// # Returns
@@ -17,8 +16,16 @@ use yrs::{Doc, Text, Transact, XmlFragment};
 ///
 /// # Example
 /// ```rust
-
-pub fn insert_ai_content_at_index(doc: &Arc<Doc>, index: u32, content: &str) -> Result<()> {
+/// // 在第 0 個 paragraph 的第 1 個 textref 的位置 5 插入內容
+/// insert_ai_content_to_paragraph(&doc, 0, 1, 5, "AI content")?;
+/// ```
+pub fn insert_ai_content_to_paragraph(
+    doc: &Arc<Doc>,
+    paragraph_index: u32,
+    textref_index: usize,
+    offset: u32,
+    content: &str,
+) -> Result<()> {
     if content.trim().is_empty() {
         return Ok(()); // 空內容不處理
     }
@@ -26,56 +33,86 @@ pub fn insert_ai_content_at_index(doc: &Arc<Doc>, index: u32, content: &str) -> 
     let xml_fragment = doc.get_or_insert_xml_fragment("content");
     let mut txn = doc.transact_mut();
 
-    // 獲取 fragment 長度
-    let len = xml_fragment.len(&txn);
+    // 獲取 paragraph 元素
+    let Some(child) = xml_fragment.get(&txn, paragraph_index) else {
+        return Err(anyhow::anyhow!("No element at index {}", paragraph_index));
+    };
 
-    // 如果沒有內容，需要等待用戶先創建結構
-    if len == 0 {
+    let yrs::types::xml::XmlOut::Element(para) = child else {
         return Err(anyhow::anyhow!(
-            "Document has no content structure yet. User needs to create content first."
+            "Element at index {} is not an Element",
+            paragraph_index
+        ));
+    };
+
+    if para.tag().as_ref() != "paragraph" {
+        return Err(anyhow::anyhow!(
+            "Element at index {} is not a paragraph (tag: {})",
+            paragraph_index,
+            para.tag().as_ref()
         ));
     }
 
-    // 找到包含該 index 的文字節點和相對位置
-    let mut current_pos = 0u32;
-    let mut target_text_ref: Option<yrs::types::xml::XmlTextRef> = None;
-    let mut target_offset = 0u32;
+    // 收集所有 textrefs
+    let mut text_refs = Vec::new();
+    collect_text_nodes_from_elem(&txn, &para, &mut text_refs);
 
-    for i in 0..len {
-        if let Some(yrs::types::xml::XmlOut::Element(para)) = xml_fragment.get(&txn, i) {
-            if para.tag().as_ref() == "paragraph" {
-                let para_len = para.len(&txn);
-                for j in 0..para_len {
-                    if let Some(yrs::types::xml::XmlOut::Text(text_ref)) = para.get(&txn, j) {
-                        let text_len = text_ref.len(&txn) as u32;
-                        if current_pos <= index && index <= current_pos + text_len {
-                            target_text_ref = Some(text_ref.clone());
-                            target_offset = index - current_pos;
-                            break;
-                        }
-                        current_pos += text_len;
-                    }
-                }
-                if target_text_ref.is_some() {
-                    break;
-                }
-            }
-        }
+    // 檢查 textref_index 是否有效
+    if textref_index >= text_refs.len() {
+        return Err(anyhow::anyhow!(
+            "TextRef index {} is out of range (paragraph has {} text nodes)",
+            textref_index,
+            text_refs.len()
+        ));
     }
 
-    let (text_ref, insert_pos) = match target_text_ref {
-        Some(text) => (text, target_offset),
-        None => return crate::editor::write::append_ai_content_to_doc(doc, content),
-    };
+    let target_text_ref = &text_refs[textref_index];
+    let text_len = target_text_ref.len(&txn) as u32;
 
-    // 在該位置插入內容
-    let text_to_insert = if insert_pos > 0 {
+    // 檢查 offset 是否有效
+    if offset > text_len {
+        return Err(anyhow::anyhow!(
+            "Offset {} is out of range (text node has {} characters)",
+            offset,
+            text_len
+        ));
+    }
+
+    // 準備要插入的內容（如果 offset > 0 且前面有文字，加空格）
+    let text_to_insert = if offset > 0 && offset < text_len {
         format!(" {}", content.trim())
     } else {
         content.trim().to_string()
     };
-    text_ref.insert(&mut txn, insert_pos, &text_to_insert);
+
+    // 在指定位置插入內容
+    target_text_ref.insert(&mut txn, offset, &text_to_insert);
 
     // 事務在函數結束時自動提交，observer 會自動捕獲更新
     Ok(())
+}
+
+/// Helper: Recursively find all XmlTextRef nodes in an element
+/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
+fn collect_text_nodes_from_elem(
+    txn: &impl yrs::ReadTxn,
+    elem: &yrs::XmlElementRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+
+    let len = elem.len(txn);
+    for i in 0..len {
+        if let Some(child) = elem.get(txn, i) {
+            match child {
+                XmlOut::Element(child_elem) => {
+                    collect_text_nodes_from_elem(txn, &child_elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
 }

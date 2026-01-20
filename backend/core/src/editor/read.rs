@@ -1,5 +1,6 @@
+use anyhow::Result;
 use std::sync::Arc;
-use yrs::{Doc, GetString, Transact, XmlFragment, XmlTextPrelim};
+use yrs::{Doc, GetString, Transact, XmlFragment};
 
 // ============================================================================
 // Constants: Element Type Definitions
@@ -47,15 +48,44 @@ pub fn get_doc_content(doc: &Arc<Doc>) -> String {
     extract_text_from_fragment(&xml_fragment, &txn)
 }
 
-    let doc = Arc::new(Doc::new());
-    let fragment = doc.get_or_insert_xml_fragment("content");
-    {
-        let mut txn = doc.transact_mut();
-        fragment.insert(&mut txn, 0, XmlTextPrelim::new("hello, world!"));
+pub fn get_text_refs_in_paragraph(
+    doc: &Arc<Doc>,
+    paragraph_index: u32,
+) -> Result<Vec<yrs::XmlTextRef>> {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let txn = doc.transact();
+
+    let Some(child) = xml_fragment.get(&txn, paragraph_index) else {
+        return Err(anyhow::anyhow!("No element at index {}", paragraph_index));
+    };
+
+    let yrs::types::xml::XmlOut::Element(para) = child else {
+        return Err(anyhow::anyhow!(
+            "Element at index {} is not a Element",
+            paragraph_index
+        ));
+    };
+
+    if para.tag().as_ref() != "paragraph" {
+        return Err(anyhow::anyhow!(
+            "Element at index {} is not a paragraph (tag: {})",
+            paragraph_index,
+            para.tag().as_ref()
+        ));
     }
-    let content = get_doc_content(&doc);
-    assert_eq!(content, "hello, world!");
+
+    let mut text_refs = Vec::new();
+    collect_text_nodes_from_elem(&txn, &para, &mut text_refs);
+    Ok(text_refs)
 }
+
+///
+/// # Arguments
+/// * `txn` - 只讀事務（可以是 Transaction 或 TransactionMut）
+/// * `paragraph` - paragraph 元素的引用
+///
+/// # Returns
+/// 包含所有文字節點引用的 Vec
 
 // ============================================================================
 // Internal Implementation: Text Extraction
@@ -195,13 +225,42 @@ fn is_break_element(tag_name: &str) -> bool {
 }
 
 // ============================================================================
+// Text Node Collection Helpers
+// ============================================================================
+
+/// Helper: Recursively find all XmlTextRef nodes in an element
+/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
+pub fn collect_text_nodes_from_elem(
+    txn: &impl yrs::ReadTxn,
+    elem: &yrs::XmlElementRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+
+    let len = elem.len(txn);
+    for i in 0..len {
+        if let Some(child) = elem.get(txn, i) {
+            match child {
+                XmlOut::Element(child_elem) => {
+                    collect_text_nodes_from_elem(txn, &child_elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yrs::XmlTextPrelim;
+    use yrs::{XmlElementPrelim, XmlTextPrelim};
 
     #[test]
     fn test_get_doc_content_empty() {
@@ -266,5 +325,19 @@ mod tests {
         assert!(is_break_element("hard_break"));
         assert!(is_break_element("br"));
         assert!(!is_break_element("paragraph"));
+    }
+
+    #[test]
+    fn test_get_text_refs_in_paragraph_empty() {
+        let doc = Arc::new(Doc::new());
+        let fragment = doc.get_or_insert_xml_fragment("content");
+        let mut txn = doc.transact_mut();
+        fragment.insert(
+            &mut txn,
+            0,
+            yrs::types::xml::XmlElementPrelim::empty("paragraph"),
+        );
+        let text_refs = get_text_refs_in_paragraph(&doc, 0).unwrap();
+        assert_eq!(text_refs.len(), 0);
     }
 }

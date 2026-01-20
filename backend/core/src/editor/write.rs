@@ -257,6 +257,10 @@ pub async fn append_ai_content_word_by_word(
 ///
 /// # Returns
 /// `Ok(())` if successful, `Err` if failed
+/// # Note
+///可能有問題，如果同一word卻被替換成不同的emoji，
+/// 或是同一word因為format_word_stream預處理的關係，被替換成不同的單詞，會導致問題
+/// 例如 "He<i>ll<i>o World" 沒被替換成 "Hello 😀 World"
 pub fn apply_replacements(
     doc: &Arc<Doc>,
     field_name: &str,
@@ -306,7 +310,7 @@ pub fn apply_replacements(
 
 /// Helper: Recursively find all XmlTextRef nodes in a fragment
 /// Uses ReadTxn trait so it works with both Transaction and TransactionMut
-fn collect_text_nodes(
+pub fn collect_text_nodes(
     txn: &impl yrs::ReadTxn,
     fragment: &yrs::XmlFragmentRef,
     collector: &mut Vec<yrs::XmlTextRef>,
