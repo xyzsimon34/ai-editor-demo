@@ -31,9 +31,9 @@ BACKEND_USER_WRITING_TIMEOUT_MS=2000     # Default 2 seconds
 just local
 
 # Start HTTP server only (database must be running first)
-just run
+just dev-http
 
-# Start worker and http server
+# Start mono (worker and http server)
 just dev
 
 # Build
