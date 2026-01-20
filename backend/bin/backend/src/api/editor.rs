@@ -410,9 +410,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     match content.as_str() {
                                         "LINTER" => {
                                             tracing::info!("🤖 toggling linter...");
-                                            let current = crate::http::LINTER_FLAG
+                                            let current = state_for_task
+                                                .linter_enabled
                                                 .load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::http::LINTER_FLAG.store(
+                                            state_for_task.linter_enabled.store(
                                                 !current,
                                                 std::sync::atomic::Ordering::Relaxed,
                                             );
@@ -428,9 +429,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         }
                                         "EMOJI_REPLACER" => {
                                             tracing::info!("🤖 toggling emoji replacer...");
-                                            let current = crate::http::EMOJI_REPLACER_FLAG
+                                            let current = state_for_task
+                                                .emoji_replacer_enabled
                                                 .load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::http::EMOJI_REPLACER_FLAG.store(
+                                            state_for_task.emoji_replacer_enabled.store(
                                                 !current,
                                                 std::sync::atomic::Ordering::Relaxed,
                                             );
