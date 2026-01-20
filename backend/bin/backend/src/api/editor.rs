@@ -223,6 +223,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         }
                                     };
 
+                                    // Determine preview mode for new_composer
+                                    let preview_mode = mode.as_deref() == Some("preview");
+
                                     // 0. PRE-CHECK: Verify document has content structure
                                     if !backend_core::editor::write::is_field_populated(
                                         &state_for_task.editor_doc,
@@ -241,56 +244,62 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 1. AI PROCESSING PHASE
                                     // Create the input struct your existing processor expects
                                     let api_key = &state_for_task.api_key;
-                                    let preview_mode = mode.as_deref() == Some("preview");
 
                                     // Select the correct function based on action
-                                    let result: Result<Option<String>, anyhow::Error> = match cmd_action
-                                        .as_str()
-                                    {
-                                        // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
-                                        "AGENT" => {
-                                            let user_last_used_at =
-                                                state_for_task.user_last_used_at.clone();
+                                    let result: Result<Option<String>, anyhow::Error> =
+                                        match cmd_action.as_str() {
+                                            // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
+                                            "AGENT" => {
+                                                let ai_writing_allowed = state_for_task
+                                                    .ai_writing_allowed
+                                                    .load(Ordering::Relaxed);
 
-                                            match new_composer(
-                                                api_key,
-                                                &role,
-                                                &state_for_task.editor_doc,
-                                                user_last_used_at,
-                                                state_for_task.user_writing_timeout_ms,
-                                                preview_mode
-                                            )
-                                            .await
-                                            {
-                                                Ok(text) => {
-                                                    Ok(text)
+                                                if !ai_writing_allowed {
+                                                    return;
                                                 }
-                                                Err(e) => {
-                                                    // Check if it's the "no content" error and handle gracefully
-                                                    let error_msg = e.to_string();
-                                                    if error_msg.contains(
-                                                        "Document has no content structure",
-                                                    ) {
-                                                        Err(anyhow::anyhow!(
-                                                            "Document has no content structure yet. User needs to create content first."
-                                                        ))
-                                                    } else {
-                                                        Err(anyhow::anyhow!(
-                                                            "Agent failed: {}",
-                                                            error_msg
-                                                        ))
+
+                                                let user_last_used_at =
+                                                    state_for_task.user_last_used_at.clone();
+
+                                                match new_composer(
+                                                    api_key,
+                                                    &role,
+                                                    &state_for_task.editor_doc,
+                                                    user_last_used_at,
+                                                    state_for_task.user_writing_timeout_ms,
+                                                    preview_mode,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(text) => Ok(text),
+                                                    Err(e) => {
+                                                        // Check if it's the "no content" error and handle gracefully
+                                                        let error_msg = e.to_string();
+                                                        if error_msg.contains(
+                                                            "Document has no content structure",
+                                                        ) {
+                                                            Err(anyhow::anyhow!(
+                                                                "Document has no content structure yet. User needs to create content first."
+                                                            ))
+                                                        } else {
+                                                            Err(anyhow::anyhow!(
+                                                                "Agent failed: {}",
+                                                                error_msg
+                                                            ))
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        _ => return, // Should be unreachable
-                                    };
+                                            _ => return, // Should be unreachable
+                                        };
 
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
                                             if let Some(text) = output {
-                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
+                                                tracing::info!(
+                                                    "✅ Generated AI suggestion (preview mode)"
+                                                );
                                                 delegate_to_frontend(
                                                     &state_for_task,
                                                     "AI_SUGGESTION",
@@ -401,6 +410,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 "complete",
                                                 &format!(
                                                     "Emoji replacer {}",
+                                                    if !current { "enabled" } else { "disabled" }
+                                                ),
+                                            );
+                                        }
+                                        "AI_WRITING_ALLOWED" => {
+                                            tracing::info!("🤖 toggling AI writing allowed...");
+                                            let current = state_for_task
+                                                .ai_writing_allowed
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            state_for_task.ai_writing_allowed.store(
+                                                !current,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &format!(
+                                                    "AI writing {}",
                                                     if !current { "enabled" } else { "disabled" }
                                                 ),
                                             );

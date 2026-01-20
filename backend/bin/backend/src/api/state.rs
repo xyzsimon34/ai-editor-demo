@@ -29,6 +29,7 @@ pub struct AppState {
     pub linter_enabled: Arc<AtomicBool>,
     pub emoji_replacer_enabled: Arc<AtomicBool>,
     pub backseater_enabled: Arc<AtomicBool>,
+    pub ai_writing_allowed: Arc<AtomicBool>,
 }
 
 // Manual FromRef implementations for fields that need extraction
@@ -88,6 +89,7 @@ impl AppState {
             linter_enabled: Arc::new(AtomicBool::new(false)),
             emoji_replacer_enabled: Arc::new(AtomicBool::new(false)),
             backseater_enabled: Arc::new(AtomicBool::new(false)),
+            ai_writing_allowed: Arc::new(AtomicBool::new(false)),
         }
     }
 }
