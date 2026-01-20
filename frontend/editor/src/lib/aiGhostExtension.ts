@@ -31,18 +31,18 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
             const meta = tr.getMeta(pluginKey)
             if (meta?.action === 'set') {
               const { text, pos, agentType } = meta
-              
+
               let colorClass = 'text-zinc-500'
               if (agentType === 'linter') colorClass = 'text-red-500'
               if (agentType === 'backseater') colorClass = 'text-yellow-500'
 
               const widget = Decoration.widget(
                 pos,
-                (view) => {
+                (_view) => {
                   const container = document.createElement('span')
                   container.className = 'inline-flex items-center ml-1'
-                  container.style.pointerEvents = 'auto' // Crucial for button clicks
-                  
+                  container.style.pointerEvents = 'auto'
+
                   const textSpan = document.createElement('span')
                   textSpan.textContent = text
                   textSpan.className = `${colorClass} opacity-60 mr-2`
@@ -50,35 +50,33 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
 
                   const btnGroup = document.createElement('span')
                   btnGroup.className = 'inline-flex gap-1 select-none items-center'
-                  
-                  // Accept Button
+
                   const acceptBtn = document.createElement('button')
-                  acceptBtn.innerHTML = '&#10003;' // Checkmark
-                  acceptBtn.className = 'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
+                  acceptBtn.innerHTML = '&#10003;'
+                  acceptBtn.className =
+                    'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
                   acceptBtn.title = 'Accept (Tab)'
-                  acceptBtn.onmousedown = (e) => { // Use onmousedown to prevent focus loss
+                  acceptBtn.onmousedown = (e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    // Get command from editor instance attached to view
-                    const editor = (view as any).dom?.parentElement?.__editor
-                    
+
                     if (this.editor) {
-                        this.editor.commands.acceptAISuggestion()
-                        this.editor.commands.focus()
+                      this.editor.commands.acceptAISuggestion()
+                      this.editor.commands.focus()
                     }
                   }
-                  
-                  // Reject Button
+
                   const rejectBtn = document.createElement('button')
-                  rejectBtn.innerHTML = '&#10005;' // Cross
-                  rejectBtn.className = 'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
+                  rejectBtn.innerHTML = '&#10005;'
+                  rejectBtn.className =
+                    'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
                   rejectBtn.title = 'Reject (Esc)'
                   rejectBtn.onmousedown = (e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     if (this.editor) {
-                        this.editor.commands.rejectAISuggestion()
-                        this.editor.commands.focus()
+                      this.editor.commands.rejectAISuggestion()
+                      this.editor.commands.focus()
                     }
                   }
 
@@ -117,7 +115,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
         ({ tr, dispatch, editor }) => {
           this.storage.suggestion = text
           this.storage.agentType = agentType
-          
+
           if (dispatch) {
             const pos = editor.state.selection.to
             tr.setMeta(pluginKey, { action: 'set', text, pos, agentType })

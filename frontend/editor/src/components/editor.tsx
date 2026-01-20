@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
 import { Sparkles, Zap } from 'lucide-react'
 import {
@@ -157,13 +157,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     requestPersistentStorage()
   }, [])
 
-  const extensions = [
-    ...getExtensions(),
-    ...(yjsExtension ? [yjsExtension] : []),
-    AIHighlightDecorationExtension,
-    AIGhostExtension,
-    slashCommand
-  ]
+  const extensions = [...getExtensions(), ...(yjsExtension ? [yjsExtension] : []), AIGhostExtension, slashCommand]
 
   const handleAITrigger = () => {
     if (runAiCommand && isConnected) {
@@ -205,12 +199,9 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     onSaveStatusChange?.('Saved')
 
     if (isAutoModeEnabled) {
-      // 如果 isAIGenerating 為 true，表示我們還在等待或展示建議
-      // 這時候如果使用者繼續打字，我們應該取消當前的 AI 狀態
       if (isAIGenerating) {
         asyncGuard.cancel()
         setIsAIGenerating(false)
-        // 重要：同時清除任何殘留的 Ghost Text，避免狀態不同步
         editor.commands.clearAISuggestion()
       }
       scheduleAITrigger()
@@ -231,9 +222,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
       if (requestIdAtResponse === 0) return
 
-      editorInstance.commands.highlightAIText('[AI was here]')
       setTimeout(() => {
-        editorInstance.commands.clearAIHighlight()
         if (asyncGuard.isLatest(requestIdAtResponse)) {
           setIsAIGenerating(false)
           asyncGuard.cancel()
@@ -245,7 +234,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     return () => {
       ydoc.off('update', handleYjsUpdate)
     }
-  }, [ydoc, editorInstance, yjsExtension])
+  }, [ydoc, editorInstance, yjsExtension, asyncGuard])
 
   useEffect(() => {
     if (editorInstance && yjsExtension) {
