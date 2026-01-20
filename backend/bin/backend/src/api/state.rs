@@ -7,11 +7,14 @@ use axum::extract::FromRef;
 use backend_core::temporal::WorkflowEngine;
 use serde::Deserialize;
 use sqlx::PgPool;
-use std::sync::{Arc, atomic::AtomicU64};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64},
+};
 use tokio::sync::broadcast;
 use yrs::Doc;
 
-#[derive(Clone, FromRef)]
+#[derive(Clone)]
 pub struct AppState {
     pub schema: AppSchema,
     pub wf_engine: WorkflowEngine,
@@ -23,6 +26,40 @@ pub struct AppState {
     pub editor_broadcast_tx: broadcast::Sender<MessageStructure>,
     pub user_last_used_at: Arc<AtomicU64>,
     pub user_writing_timeout_ms: u64,
+    pub linter_enabled: Arc<AtomicBool>,
+    pub emoji_replacer_enabled: Arc<AtomicBool>,
+    pub backseater_enabled: Arc<AtomicBool>,
+}
+
+// Manual FromRef implementations for fields that need extraction
+impl FromRef<AppState> for Decoder {
+    fn from_ref(state: &AppState) -> Self {
+        state.jwt_decoder.clone()
+    }
+}
+
+impl FromRef<AppState> for Encoder {
+    fn from_ref(state: &AppState) -> Self {
+        state.jwt_encoder.clone()
+    }
+}
+
+impl FromRef<AppState> for AppSchema {
+    fn from_ref(state: &AppState) -> Self {
+        state.schema.clone()
+    }
+}
+
+impl FromRef<AppState> for WorkflowEngine {
+    fn from_ref(state: &AppState) -> Self {
+        state.wf_engine.clone()
+    }
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pg_pool.clone()
+    }
 }
 
 impl AppState {
@@ -48,6 +85,9 @@ impl AppState {
             editor_broadcast_tx,
             user_last_used_at: Arc::new(AtomicU64::new(0)),
             user_writing_timeout_ms,
+            linter_enabled: Arc::new(AtomicBool::new(false)),
+            emoji_replacer_enabled: Arc::new(AtomicBool::new(false)),
+            backseater_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -71,10 +111,6 @@ pub struct AiCommand {
 pub struct AgentPayload {
     pub role: String,
     pub mode: Option<String>,
-}
-
-pub struct RefinerPayload {
-    pub text: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
