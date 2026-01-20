@@ -27,6 +27,7 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const countdownRef = useRef<NodeJS.Timeout | null>(null)
+  const isExecutingRef = useRef(false)
   const stateRef = useRef<TriggerState>({
     lastContentLength: 0,
     lastContent: ''
@@ -80,7 +81,14 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
   )
 
   const scheduleAITrigger = useCallback(() => {
-    if (!editor || !enabled) {
+    if (!editor || !enabled || isExecutingRef.current) {
+      return
+    }
+
+    const scheduleSnapshot = getContentSnapshot(editor)
+    const shouldSchedule = shouldTriggerAI(scheduleSnapshot)
+
+    if (!shouldSchedule) {
       return
     }
 
@@ -100,21 +108,30 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
     }, 1000)
 
     timerRef.current = setTimeout(() => {
-      const snapshot = getContentSnapshot(editor)
-      const shouldTrigger = shouldTriggerAI(snapshot)
+      const triggerSnapshot = getContentSnapshot(editor)
 
-      if (!shouldTrigger) {
+      if (triggerSnapshot.content !== scheduleSnapshot.content) {
         clearTimers()
         return
       }
 
       stateRef.current = {
-        lastContentLength: snapshot.charCount,
-        lastContent: snapshot.content
+        lastContentLength: triggerSnapshot.charCount,
+        lastContent: triggerSnapshot.content
       }
+      isExecutingRef.current = true
 
       clearTimers()
-      onTriggerRef.current()
+
+      Promise.resolve().then(() => {
+        try {
+          onTriggerRef.current()
+        } finally {
+          setTimeout(() => {
+            isExecutingRef.current = false
+          }, 100)
+        }
+      })
     }, debounceMs)
   }, [editor, enabled, debounceMs, shouldTriggerAI, clearTimers])
 
