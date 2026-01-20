@@ -6,7 +6,7 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::IntoResponse,
+    response::{IntoResponse, Json},
     routing::get,
 };
 use backend_core::llm::new_composer;
@@ -15,13 +15,17 @@ use backend_core::refiner::processor::{
 };
 use backend_core::refiner::types::RefineInput;
 use futures::{sink::SinkExt, stream::StreamExt};
+use serde_json::{Value, json};
 use std::{cmp::max, sync::atomic::Ordering};
 use tokio::time::Instant;
-use yrs::{ReadTxn, Transact, Update, updates::decoder::Decode};
+use yrs::{GetString, ReadTxn, Transact, Update, Xml, XmlFragment, updates::decoder::Decode};
 pub type AgentCache = mini_moka::sync::Cache<Uuid, (String, AgentContext)>;
 
 pub fn routes() -> axum::Router<AppState> {
-    axum::Router::new().route("/ws", get(ws_handler))
+    axum::Router::new()
+        .route("/ws", get(ws_handler))
+        // todo: delete debug endpoint after development
+        .route("/debug/yjs", get(debug_yjs_handler))
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -88,9 +92,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 // LANE B: AI Commands
                 Message::Text(text) => {
-                    println!("Received command: {:?}", text);
+                    tracing::info!("Received command: {:?}", text);
                     if let Ok(cmd) = serde_json::from_str::<AiCommand>(&text) {
-                        println!("Command: {:?}", cmd);
+                        tracing::info!("Command: {:?}", cmd);
                         // CLONE STATE FOR THE ASYNC TASK
                         // We spawn a new thread/task so we don't block the websocket heartbeat
                         let state_for_task = state.clone();
@@ -440,4 +444,76 @@ fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, mess
         })
         .to_string(),
     ));
+}
+
+/// Debug endpoint to get Yjs document as JSON
+async fn debug_yjs_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let xml_fragment = state.editor_doc.get_or_insert_xml_fragment("content");
+    let txn = state.editor_doc.transact();
+
+    let json_value = yjs_to_json(&xml_fragment, &txn);
+
+    Json(json!({
+        "document": json_value,
+        "fragment_name": "content"
+    }))
+}
+
+/// Convert Yjs XML Fragment to JSON structure
+fn yjs_to_json(fragment: &yrs::types::xml::XmlFragmentRef, txn: &yrs::Transaction) -> Value {
+    let mut children = Vec::new();
+    let child_count = fragment.len(txn);
+
+    for i in 0..child_count {
+        if let Some(child) = fragment.get(txn, i) {
+            children.push(node_to_json(&child, txn));
+        }
+    }
+
+    json!({
+        "type": "fragment",
+        "children": children
+    })
+}
+
+/// Convert a Yjs XML node to JSON
+fn node_to_json(node: &yrs::types::xml::XmlOut, txn: &yrs::Transaction) -> Value {
+    match node {
+        yrs::types::xml::XmlOut::Text(text_node) => {
+            let text = text_node.get_string(txn);
+            json!({
+                "type": "text",
+                "text": text
+            })
+        }
+        yrs::types::xml::XmlOut::Element(element_node) => {
+            let tag = element_node.tag().as_ref().to_string();
+            let mut children = Vec::new();
+            let child_count = element_node.len(txn);
+
+            // Get attributes
+            let mut attributes = serde_json::Map::new();
+            let attrs = element_node.attributes(txn);
+            for (key, value) in attrs {
+                let key_str: &str = key.as_ref();
+                let value_str = value.to_string(txn);
+                attributes.insert(key_str.to_string(), json!(value_str));
+            }
+
+            // Process children
+            for i in 0..child_count {
+                if let Some(child) = element_node.get(txn, i) {
+                    children.push(node_to_json(&child, txn));
+                }
+            }
+
+            json!({
+                "type": "element",
+                "tag": tag,
+                "attributes": attributes,
+                "children": children
+            })
+        }
+        yrs::types::xml::XmlOut::Fragment(fragment_node) => yjs_to_json(fragment_node, txn),
+    }
 }
