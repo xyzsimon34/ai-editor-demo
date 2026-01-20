@@ -4,13 +4,13 @@ Before running the startup commands, ensure you have the following tools install
 
 1. Runtimes & SDKs
 
-    Rust Toolchain: Required for the backend. Ensure you have rustc and cargo installed.
+    - Rust Toolchain: Required for the backend. Ensure you have rustc and cargo installed.
 
-    please refer to the [official cargo documentation](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+        Please refer to the [official cargo documentation](https://doc.rust-lang.org/cargo/getting-started/installation.html).
 
-    Node.js: Required for the frontend. Version 18.x or higher (LTS) is recommended.
+    - Node.js: Required for the frontend. Version 18.x or higher (LTS) is recommended.
 
-    Yarn: The package manager used for the frontend (editor).
+    - Yarn: The package manager used for the frontend (editor).
 
 2. Command Line Tools
 
@@ -41,7 +41,7 @@ yarn install
 cd backend
 just local-dev
 
-# start frontend 
+# Start frontend 
 
 cd ../frontend/editor
 yarn dev

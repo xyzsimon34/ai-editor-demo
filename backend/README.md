@@ -28,7 +28,7 @@ BACKEND_USER_WRITING_TIMEOUT_MS=2000     # Default 2 seconds
 
 ```bash
 # Start full dev environment (PostgreSQL + Temporal + Backend)
-just local
+just local-dev
 
 # Start HTTP server only (database must be running first)
 just dev-http
