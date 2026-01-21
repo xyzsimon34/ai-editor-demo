@@ -169,8 +169,25 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
 }
 
 function getContentSnapshot(editor: EditorInstance): ContentSnapshot {
-  const content = editor.getText()
-  const charCount = editor.storage.characterCount?.characters() || content.length
+  // Extract text excluding pending AI suggestions (to prevent loop)
+  const state = editor.state
+  let content = ''
+  let charCount = 0
+
+  state.doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      // Check if this text node has a pending aisuggestion mark
+      const hasPendingAISuggestion = node.marks.some(
+        (mark) => mark.type.name === 'aisuggestion' && mark.attrs?.status === 'pending'
+      )
+      
+      // Only include text that doesn't have pending AI suggestions
+      if (!hasPendingAISuggestion) {
+        content += node.text
+        charCount += node.text.length
+      }
+    }
+  })
 
   return { content, charCount }
 }

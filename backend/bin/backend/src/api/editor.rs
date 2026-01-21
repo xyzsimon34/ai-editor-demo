@@ -276,7 +276,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     let preview_mode = mode.as_deref() == Some("preview");
 
                                     // Select the correct function based on action
-                                    let result: Result<Option<String>, anyhow::Error> = match cmd_action
+                                    let result: Result<String, anyhow::Error> = match cmd_action
                                         .as_str()
                                     {
                                         // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
@@ -294,8 +294,27 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             )
                                             .await
                                             {
-                                                Ok(text) => {
-                                                    Ok(text)
+                                                Ok(_) => {
+                                                    // Manually encode and broadcast the update to ensure it's sent
+                                                    // (Observer might not trigger reliably in async context)
+                                                    let update = {
+                                                        let txn = state_for_task.editor_doc.transact();
+                                                        txn.encode_state_as_update_v1(&yrs::StateVector::default())
+                                                    };
+                                                    
+                                                    if let Err(e) = state_for_task
+                                                        .editor_broadcast_tx
+                                                        .send(MessageStructure::YjsUpdate(update.to_vec()))
+                                                    {
+                                                        tracing::warn!("Failed to manually broadcast agent update: {:?}", e);
+                                                    } else {
+                                                        tracing::info!(
+                                                            "✅ Manually broadcasted agent update to {} subscribers",
+                                                            state_for_task.editor_broadcast_tx.receiver_count()
+                                                        );
+                                                    }
+                                                    
+                                                    Ok("Agent executed successfully".to_string())
                                                 }
                                                 Err(e) => {
                                                     // Check if it's the "no content" error and handle gracefully
@@ -321,24 +340,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            if let Some(text) = output {
-                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_SUGGESTION",
-                                                    "complete",
-                                                    &text,
-                                                );
-                                            } else {
-                                                // The agent modifies the doc directly via new_composer
-                                                tracing::info!("✅ Applied AI changes via CRDT");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_STATUS",
-                                                    "complete",
-                                                    "AI agent finished successfully",
-                                                );
-                                            }
+                                            // The agent modifies the doc directly via new_composer
+                                            tracing::info!("✅ Applied AI changes via CRDT");
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &output,
+                                            );
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();
@@ -484,12 +493,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 }
 
 fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, message: &str) {
-    let _ = state.editor_broadcast_tx.send(MessageStructure::AiCommand(
-        serde_json::json!({
-            "type": command_type,
-            "status": status,
-            "message": message
-        })
-        .to_string(),
-    ));
+    let json_msg = serde_json::json!({
+        "type": command_type,
+        "status": status,
+        "message": message
+    })
+    .to_string();
+    
+    match state.editor_broadcast_tx.send(MessageStructure::AiCommand(json_msg.clone())) {
+        Ok(_) => {
+            tracing::info!(
+                "✅ Broadcasted {} message to {} subscribers: status={}, message={}",
+                command_type,
+                state.editor_broadcast_tx.receiver_count(),
+                status,
+                message
+            );
+        }
+        Err(e) => {
+            tracing::warn!("Failed to broadcast {} message: {:?}", command_type, e);
+        }
+    }
 }

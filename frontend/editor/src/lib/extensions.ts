@@ -21,6 +21,7 @@ import {
   UploadImagesPlugin
 } from 'novel'
 import { Markdown } from 'tiptap-markdown'
+import { AISuggestion } from './aiSuggestion'
 
 import { AIGeneratedNode } from './aiGeneratedNode'
 
@@ -143,7 +144,7 @@ const markdownExtension = Markdown.configure({
 // Note: Collaboration extension is only available in Tiptap v3
 // For Tiptap v2 (which Novel uses), we'll handle Yjs sync manually in the editor component
 export const getExtensions = () => {
-  return [
+  const extensions = [
     starterKit,
     placeholder,
     tiptapLink,
@@ -163,7 +164,10 @@ export const getExtensions = () => {
     CustomKeymap,
     GlobalDragHandle,
     AIGeneratedNode
+    AISuggestion // Mark for AI suggestions - compatible with y-prosemirror
   ]
+  
+  return extensions
 }
 
 // Keep defaultExtensions for backward compatibility (non-collaborative mode)
@@ -187,4 +191,5 @@ export const defaultExtensions = [
   CustomKeymap,
   GlobalDragHandle,
   AIGeneratedNode
+  AISuggestion
 ]

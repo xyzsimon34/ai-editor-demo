@@ -17,35 +17,39 @@ pub async fn new_composer(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to execute tool: {}", e))?;
     println!("result: {}", result);
+    // THIS IS THE MARKS FLOW. USE IF ELEMENt FLOW DOESN'T WORK
+    // 使用 prepare_words 預處理單詞（添加空格和換行符）
+    // let words = crate::editor::format_word_stream(&result);
+    // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
+    // Generate a unique run ID for this AI generation
+    let run_id = format!("extender-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis());
+    crate::editor::append_ai_content_to_doc(doc, &result, Some("extender"), Some(&run_id))?;
+
 
     if preview_mode {
         return Ok(Some(result));
     }
 
     // 使用 format_word_stream 預處理單詞（添加空格和換行符）
-    let words = crate::editor::format_word_stream(&result);
-    crate::editor::append_ai_content_word_by_word(
-        doc,
-        words,
-        100,
-        user_last_used_at,
-        user_writing_timeout_ms,
-    )
-    .await?;
-    let fragment = doc.get_or_insert_xml_fragment("content");
-    let mut txn = doc.transact_mut();
+    // let words = crate::editor::format_word_stream(&result);
+    // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
+    // let fragment = doc.get_or_insert_xml_fragment("content");
+    // let mut txn = doc.transact_mut();
 
-    if let Some(root_elem) = fragment.get(&txn, 0) {
-        crate::editor::push_element(
-            &root_elem,
-            "ai_generated",
-            &result,
-            &[("data-ai-generated", "true"), ("data-ai-id", "ai-345")],
-            &mut txn,
-        )?;
-    } else {
-        tracing::warn!("⚠️ Fragment has no root element to append AI content to");
-    }
+    // if let Some(root_elem) = fragment.get(&txn, 0) {
+    //     crate::editor::push_element(
+    //         &root_elem,
+    //         "ai_generated",
+    //         &result,
+    //         &[("data-ai-generated", "true"), ("data-ai-id", "ai-345")],
+    //         &mut txn,
+    //     )?;
+    // } else {
+    //     tracing::warn!("⚠️ Fragment has no root element to append AI content to");
+    // }
 
     Ok(None)
 }

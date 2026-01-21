@@ -87,9 +87,10 @@ pub fn is_field_populated(doc: &Arc<Doc>, field_name: &str) -> bool {
 ///
 /// let doc = Arc::new(Doc::new());
 /// // ... 用戶先創建內容結構 ...
-/// append_ai_content_to_doc(&doc, "AI generated text")?;
+/// append_ai_content_to_doc(&doc, "AI generated text", Some("extender"), Some("run-123"))?;
 /// ```
-pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
+/// 
+pub fn append_ai_content_to_doc_as_elements(doc: &Arc<Doc>, content: &str) -> Result<()> {
     if content.trim().is_empty() {
         return Ok(()); // 空內容不處理
     }
@@ -149,6 +150,60 @@ pub fn append_ai_content_to_doc(doc: &Arc<Doc>, content: &str) -> Result<()> {
     Ok(())
 }
 
+
+// MARKS WORKFLOW
+pub fn append_ai_content_to_doc(
+    doc: &Arc<Doc>,
+    content: &str,
+    tool_name: Option<&str>,
+    run_id: Option<&str>,
+) -> Result<()> {
+    if content.trim().is_empty() { return Ok(()); }
+
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let mut txn = doc.transact_mut();
+
+    let len = xml_fragment.len(&txn);
+    if len == 0 { return Err(anyhow::anyhow!("No content")); }
+
+    // Get the last paragraph
+    let Some(last_elem) = xml_fragment.get(&txn, len - 1) else { return Ok(()); };
+    let yrs::types::xml::XmlOut::Element(para) = last_elem else { return Ok(()); };
+    
+    // Position to insert new node
+    let insert_pos = para.len(&txn);
+
+    // 1. Create the Metadata Map (Inner) - uses String keys for yrs::Any::Map
+    let mut mark_attrs = std::collections::HashMap::<String, yrs::Any>::new();
+    mark_attrs.insert("status".to_string(), yrs::Any::String("pending".into()));
+    mark_attrs.insert("aimodel".to_string(), yrs::Any::String("gpt-4".into()));
+    if let Some(t) = tool_name {
+        mark_attrs.insert("tool".to_string(), yrs::Any::String(t.into()));
+    }
+    if let Some(r) = run_id {
+        mark_attrs.insert("runid".to_string(), yrs::Any::String(r.into()));
+    }
+
+    // 2. Create the Root Map (Outer - matches Mark name) - uses Arc<str> keys for insert_with_attributes
+    let mut text_attrs = std::collections::HashMap::<Arc<str>, yrs::Any>::new();
+    text_attrs.insert(Arc::from("aisuggestion"), yrs::Any::Map(Arc::new(mark_attrs)));
+    
+    // 3. Create a new XmlText node and insert it into the paragraph
+    // We start it empty ("") because we need the reference to it first
+    let text_node = para.insert(&mut txn, insert_pos, yrs::XmlTextPrelim::new(""));
+
+    // 4. Insert the content WITH attributes into the text node
+    text_node.insert_with_attributes(
+        &mut txn, 
+        0, 
+        content, 
+        text_attrs
+    );
+    
+    tracing::info!("Inserted text with Mark attributes at pos {}", insert_pos);
+    Ok(())
+}
+
 /// 逐字追加預處理的單詞列表到文檔
 ///
 /// **重要**：一旦檢測到用戶寫入，立即停止並拋棄剩餘單詞，不恢復
@@ -194,7 +249,7 @@ pub async fn append_ai_content_word_by_word(
         }
 
         // 追加單詞（已包含空格或換行符）
-        append_ai_content_to_doc(doc, &word)?;
+        append_ai_content_to_doc(doc, &word, None, None)?;
 
         // 延遲以產生流式效果
         if delay_ms > 0 {
@@ -350,7 +405,7 @@ mod tests {
     #[test]
     fn test_append_ai_content_to_empty_doc() {
         let doc = Arc::new(Doc::new());
-        let result = append_ai_content_to_doc(&doc, "test");
+        let result = append_ai_content_to_doc(&doc, "test", None, None);
         assert!(result.is_err());
         assert!(
             result
@@ -381,7 +436,7 @@ mod tests {
         }
 
         // 現在可以追加 AI 內容
-        let result = append_ai_content_to_doc(&doc, "AI content");
+        let result = append_ai_content_to_doc(&doc, "AI content", None, None);
         assert!(result.is_ok());
 
         // 驗證內容已添加
@@ -410,7 +465,7 @@ mod tests {
         }
 
         // 空內容應該被忽略
-        let result = append_ai_content_to_doc(&doc, "   ");
+        let result = append_ai_content_to_doc(&doc, "   ", None, None);
         assert!(result.is_ok());
 
         let content = crate::editor::read::get_doc_content(&doc);
