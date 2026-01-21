@@ -150,6 +150,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const {
     status: collaborationStatus,
     aiStatus,
+    aiStatusMessage,
     isServerSynced,
     runAiCommand
   } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion, handleComment, handleToggleStateChange)
@@ -276,7 +277,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   return (
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
-      <AIStatusBubble status={aiStatus} />
+      <AIStatusBubble status={aiStatus} message={aiStatusMessage} />
       <CommentToast comment={currentComment} />
 
       <StatusBar

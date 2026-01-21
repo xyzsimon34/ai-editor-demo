@@ -35,6 +35,7 @@ export interface BackseaterComment {
 interface UseCollaborationReturn {
   status: ConnectionStatus
   aiStatus: AIStatus
+  aiStatusMessage?: string
   isServerSynced: boolean
   runAiCommand: (action: string, payload?: AiPayload) => void
   onToggleStateChange?: (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => void
@@ -65,6 +66,7 @@ export function useCollaboration(
 ): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | undefined>(undefined)
   const [isServerSynced, setIsServerSynced] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -129,23 +131,33 @@ export function useCollaboration(
       try {
         const parsed = JSON.parse(data) as WebSocketMessage
         if (parsed.type === 'AI_STATUS') {
-          setAiStatus(parsed.status)
           const message = parsed.message.toLowerCase()
-          if (message.includes('linter')) {
-            const enabled = message.includes('enabled')
-            onToggleStateChangeRef.current?.('LINTER', enabled)
-          } else if (message.includes('backseater')) {
-            const enabled = message.includes('enabled')
-            onToggleStateChangeRef.current?.('BACKSEATER', enabled)
-          } else if (message.includes('emoji replacer') || message.includes('emoji_replacer')) {
-            const enabled = message.includes('enabled')
-            onToggleStateChangeRef.current?.('EMOJI_REPLACER', enabled)
+          const isToggleStateMessage = 
+            (message.includes('linter') || message.includes('backseater') || message.includes('emoji replacer') || message.includes('emoji_replacer')) &&
+            (message.includes('enabled') || message.includes('disabled'))
+          
+          if (isToggleStateMessage) {
+            if (message.includes('linter')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('LINTER', enabled)
+            } else if (message.includes('backseater')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('BACKSEATER', enabled)
+            } else if (message.includes('emoji replacer') || message.includes('emoji_replacer')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('EMOJI_REPLACER', enabled)
+            }
+            return
           }
+          
+          setAiStatus(parsed.status)
+          setAiStatusMessage(parsed.message)
         } else if (parsed.type === 'SYNC_COMPLETE') {
           setIsServerSynced(true)
         } else if (parsed.type === 'AI_SUGGESTION') {
           onAiSuggestionRef.current?.(parsed.message)
           setAiStatus('done')
+          setAiStatusMessage(undefined)
         } else if (parsed.type === 'COMMENT') {
           onCommentRef.current?.(parsed)
         }
@@ -193,5 +205,5 @@ export function useCollaboration(
     }
   }, [ydoc, isLocalSynced])
 
-  return { status, aiStatus, isServerSynced, runAiCommand, onToggleStateChange }
+  return { status, aiStatus, aiStatusMessage, isServerSynced, runAiCommand, onToggleStateChange }
 }

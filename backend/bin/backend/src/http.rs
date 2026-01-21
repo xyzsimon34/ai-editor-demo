@@ -133,27 +133,87 @@ pub async fn start_http(
 
             if linter_enabled {
                 tracing::info!("🤖 Calling AI Linter...");
+                let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                    serde_json::json!({
+                        "type": "AI_STATUS",
+                        "status": "thinking",
+                        "message": "Linter 正在檢查語法和拼寫..."
+                    })
+                    .to_string(),
+                ));
                 match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
                     Ok(_) => {
                         tracing::info!("✅ AI check successful");
+                        let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                            serde_json::json!({
+                                "type": "AI_STATUS",
+                                "status": "done",
+                                "message": "Linter 檢查完成"
+                            })
+                            .to_string(),
+                        ));
                     }
-                    Err(e) => tracing::error!("❌ AI check failed: {:?}", e),
+                    Err(e) => {
+                        tracing::error!("❌ AI check failed: {:?}", e);
+                        let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                            serde_json::json!({
+                                "type": "AI_STATUS",
+                                "status": "error",
+                                "message": "Linter 檢查失敗"
+                            })
+                            .to_string(),
+                        ));
+                    }
                 }
             }
 
             if emoji_replacer_enabled {
                 tracing::info!("🤖 Calling AI Emoji Replacer...");
+                let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                    serde_json::json!({
+                        "type": "AI_STATUS",
+                        "status": "thinking",
+                        "message": "Emoji Replacer 正在尋找合適的表情符號..."
+                    })
+                    .to_string(),
+                ));
                 match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await
                 {
                     Ok(_) => {
                         tracing::info!("✅ AI emoji replacer successful");
+                        let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                            serde_json::json!({
+                                "type": "AI_STATUS",
+                                "status": "done",
+                                "message": "Emoji Replacer 完成"
+                            })
+                            .to_string(),
+                        ));
                     }
-                    Err(e) => tracing::error!("❌ AI emoji replacer failed: {:?}", e),
+                    Err(e) => {
+                        tracing::error!("❌ AI emoji replacer failed: {:?}", e);
+                        let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                            serde_json::json!({
+                                "type": "AI_STATUS",
+                                "status": "error",
+                                "message": "Emoji Replacer 失敗"
+                            })
+                            .to_string(),
+                        ));
+                    }
                 }
             }
 
             if backseater_enabled {
                 tracing::info!("💬 Calling AI Backseater...");
+                let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                    serde_json::json!({
+                        "type": "AI_STATUS",
+                        "status": "thinking",
+                        "message": "Backseater 正在分析並提供建議..."
+                    })
+                    .to_string(),
+                ));
                 match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task)
                     .await
                 {
@@ -163,6 +223,14 @@ pub async fn start_http(
                                 "✅ Generated {} comments from backseater",
                                 comments.len()
                             );
+                            let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                                serde_json::json!({
+                                    "type": "AI_STATUS",
+                                    "status": "done",
+                                    "message": format!("Backseater 生成了 {} 條建議", comments.len())
+                                })
+                                .to_string(),
+                            ));
                             // Send each comment to frontend via broadcast channel
                             for comment in comments {
                                 let comment_json = serde_json::json!({
@@ -182,9 +250,27 @@ pub async fn start_http(
                             }
                         } else {
                             tracing::info!("⚠️ No comments generated by backseater");
+                            let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                                serde_json::json!({
+                                    "type": "AI_STATUS",
+                                    "status": "done",
+                                    "message": "Backseater 暫無建議"
+                                })
+                                .to_string(),
+                            ));
                         }
                     }
-                    Err(e) => tracing::error!("❌ AI backseater failed: {:?}", e),
+                    Err(e) => {
+                        tracing::error!("❌ AI backseater failed: {:?}", e);
+                        let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
+                            serde_json::json!({
+                                "type": "AI_STATUS",
+                                "status": "error",
+                                "message": "Backseater 失敗"
+                            })
+                            .to_string(),
+                        ));
+                    }
                 }
             }
 

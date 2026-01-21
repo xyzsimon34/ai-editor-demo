@@ -12,30 +12,30 @@ function getRandomMessage(messages: string[]): string {
 
 interface AIStatusBubbleProps {
   status: 'idle' | 'thinking' | 'done' | 'error' | 'complete'
+  message?: string
   className?: string
 }
 
-export function AIStatusBubble({ status, className = '' }: AIStatusBubbleProps) {
+export function AIStatusBubble({ status, message: propMessage, className = '' }: AIStatusBubbleProps) {
   const [message, setMessage] = useState('')
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
     if (status === 'thinking') {
-      setMessage(getRandomMessage(THINKING_MESSAGES))
+      setMessage(propMessage || getRandomMessage(THINKING_MESSAGES))
       setIsVisible(true)
     } else if (status === 'done' || status === 'complete') {
-      setMessage(getRandomMessage(DONE_MESSAGES))
-      // Auto-hide after 2 seconds
+      setMessage(propMessage || getRandomMessage(DONE_MESSAGES))
       const timer = setTimeout(() => setIsVisible(false), 2000)
       return () => clearTimeout(timer)
     } else if (status === 'error') {
-      setMessage('😱 出錯了，稍後再試試')
+      setMessage(propMessage || '😱 出錯了，稍後再試試')
       const timer = setTimeout(() => setIsVisible(false), 3000)
       return () => clearTimeout(timer)
     } else {
       setIsVisible(false)
     }
-  }, [status])
+  }, [status, propMessage])
 
   if (!isVisible) return null
 
