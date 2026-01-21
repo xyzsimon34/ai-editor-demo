@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use backend_core::llm::new_composer;
+use backend_core::llm::run_composer;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
@@ -248,7 +248,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             let user_last_used_at =
                                                 state_for_task.user_last_used_at.clone();
 
-                                            match new_composer(
+                                            match run_composer(
                                                 api_key,
                                                 &role,
                                                 &state_for_task.editor_doc,
@@ -294,7 +294,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                     &text,
                                                 );
                                             } else {
-                                                // The agent modifies the doc directly via new_composer
+                                                // The agent modifies the doc directly via run_composer
                                                 tracing::info!("✅ Applied AI changes via CRDT");
                                                 delegate_to_frontend(
                                                     &state_for_task,

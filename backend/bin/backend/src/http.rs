@@ -133,7 +133,7 @@ pub async fn start_http(
 
             if linter_enabled {
                 tracing::info!("🤖 Calling AI Linter...");
-                match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
+                match backend_core::llm::run_linter(&api_key_for_task, doc_for_task.clone()).await {
                     Ok(_) => {
                         tracing::info!("✅ AI check successful");
                     }
@@ -143,7 +143,7 @@ pub async fn start_http(
 
             if emoji_replacer_enabled {
                 tracing::info!("🤖 Calling AI Emoji Replacer...");
-                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await
+                match backend_core::llm::run_emoji_replacer(&api_key_for_task, &doc_for_task).await
                 {
                     Ok(_) => {
                         tracing::info!("✅ AI emoji replacer successful");
@@ -154,7 +154,7 @@ pub async fn start_http(
 
             if backseater_enabled {
                 tracing::info!("💬 Calling AI Backseater...");
-                match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task)
+                match backend_core::llm::run_backseating(&api_key_for_task, &doc_for_task)
                     .await
                 {
                     Ok(comments) => {

@@ -54,6 +54,58 @@ DO NOT MODIFY FILES THAT ARE CREATED BY CODEGEN such as gql.ts or graphql.ts, sc
   call into functions in `core` instead of performing DB queries directly in the
   handlers.
 
+### Naming Conventions
+
+Follow Rust API Guidelines and project-specific patterns:
+
+#### Service/Workflow Execution
+- **`run_`** prefix: For functions that execute a complete agent service workflow
+  - Orchestrates multiple steps: calling LLM APIs, processing results, modifying documents
+  - Examples: `run_composer`, `run_linter`, `run_backseating`
+  - ❌ Avoid: `new_*` (misleading - suggests constructor), `execute_*` (less clear about full workflow)
+
+#### Tool/Operation Execution  
+- **`execute_`** prefix: For single tool operations
+  - Examples: `tools::extender::execute_tool`, `tools::linter::execute_tool`
+
+#### Getters
+- **`get_`** prefix: For functions that retrieve data
+  - Examples: `get_doc_content`, `get_text_refs_in_paragraph`
+  - Note: Rust convention allows omitting `get_`, but we keep it for clarity
+
+#### Boolean Checks
+- **`is_`** prefix: For predicate functions returning `bool`
+  - Examples: `is_user_writing`, `is_field_populated`, `is_block_level_element`
+
+#### Action Verbs
+- **Direct verbs**: For simple operations
+  - Examples: `insert_ai_content_to_paragraph`, `append_ai_content_to_doc`, `apply_replacements`, `format_word_stream`
+
+#### Handlers
+- **`handle_`** prefix: For processing specific events/nodes
+  - Examples: `handle_text_node`, `handle_element_node`
+
+#### Extractors
+- **`extract_`** prefix: For extracting data from structures
+  - Examples: `extract_text_from_fragment`, `extract_text_from_node`
+
+#### Conversions (Rust API Guidelines)
+- **`as_`**: Low-cost, borrowing conversions (e.g., `as_str()`)
+- **`to_`**: High-cost, usually allocates (e.g., `to_string()`)
+- **`into_`**: Consumes original value, transfers ownership (e.g., `into_vec()`)
+
+#### Constructors
+- **`new()`**: Only for struct constructors that create instances
+  - ❌ Never use `new_` prefix for functions that perform operations
+
+#### Collectors
+- **`collect_`** prefix: For gathering multiple items
+  - Examples: `collect_text_nodes`, `collect_text_nodes_from_elem`
+
+#### Connection/Setup
+- **Direct verbs**: For connection and setup operations
+  - Examples: `connect_pg`, `migrate`
+
 ### Database Queries
 
 - **Simple reads/writes** are wrapped in helper functions that accept a

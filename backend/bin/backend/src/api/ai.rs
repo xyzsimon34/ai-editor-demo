@@ -10,7 +10,7 @@ use axum::{
     extract::{Json, State},
     routing::post,
 };
-use backend_core::llm::new_linter;
+use backend_core::llm::run_linter;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
@@ -114,7 +114,7 @@ pub async fn linter_text_handler(
 
     // The linter modifies the document, which should trigger the observer
     // in mono.rs to automatically broadcast the update via WebSocket
-    new_linter(&state.api_key, state.editor_doc.clone())
+    run_linter(&state.api_key, state.editor_doc.clone())
         .await
         .map_err(|e| {
             tracing::error!("Linter failed: {:?}", e);

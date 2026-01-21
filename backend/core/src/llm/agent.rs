@@ -3,7 +3,8 @@ use crate::llm::tools::linter;
 use anyhow::Result;
 use std::sync::{Arc, atomic::AtomicU64};
 use yrs::{Doc, Transact, XmlFragment};
-pub async fn new_composer(
+
+pub async fn run_composer(
     api_key: &str,
     role: &str,
     doc: &Arc<Doc>,
@@ -50,12 +51,12 @@ pub async fn new_composer(
     Ok(None)
 }
 
-pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
+pub async fn run_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
     let (_result, _updated_doc) = linter::execute_tool(doc, api_key).await?;
     Ok(())
 }
 
-pub async fn new_backseating_agent(
+pub async fn run_backseating(
     api_key: &str,
     doc: &Arc<Doc>,
 ) -> Result<Vec<crate::llm::tools::backseater::BackseaterArgs>> {
@@ -79,7 +80,7 @@ pub async fn new_backseating_agent(
     Ok(comments)
 }
 
-pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
+pub async fn run_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
     // Extract plain text from document
     let content = crate::editor::get_doc_content(doc);
     if content.trim().is_empty() {

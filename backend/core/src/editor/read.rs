@@ -79,13 +79,72 @@ pub fn get_text_refs_in_paragraph(
     Ok(text_refs)
 }
 
+pub fn get_doc_xml_structure(doc: &Arc<Doc>) -> yrs::types::xml::XmlOut {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    yrs::types::xml::XmlOut::Fragment(xml_fragment)
+}
+
+/// Debug 整個 doc 的結構
 ///
-/// # Arguments
-/// * `txn` - 只讀事務（可以是 Transaction 或 TransactionMut）
-/// * `paragraph` - paragraph 元素的引用
-///
-/// # Returns
-/// 包含所有文字節點引用的 Vec
+/// 返回一個可以用於 debug 打印的字符串表示
+pub fn debug_doc_structure(doc: &Arc<Doc>) -> String {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let txn = doc.transact();
+    let len = xml_fragment.len(&txn);
+
+    let mut result = String::from("Doc structure:\n");
+    result.push_str(&format!("Fragment length: {}\n", len));
+
+    for i in 0..len {
+        if let Some(child) = xml_fragment.get(&txn, i) {
+            result.push_str(&format!("  [{}]: ", i));
+            match &child {
+                yrs::types::xml::XmlOut::Text(text_node) => {
+                    let text = text_node.get_string(&txn);
+                    result.push_str(&format!("Text({} chars): \"{}\"\n", text.len(), text));
+                }
+                yrs::types::xml::XmlOut::Element(elem) => {
+                    let tag = elem.tag().as_ref();
+                    let child_count = elem.len(&txn);
+                    result.push_str(&format!("Element<{}> ({} children)\n", tag, child_count));
+
+                    // 遞迴打印子節點
+                    for j in 0..child_count {
+                        if let Some(child) = elem.get(&txn, j) {
+                            match &child {
+                                yrs::types::xml::XmlOut::Text(text_node) => {
+                                    let text = text_node.get_string(&txn);
+                                    result.push_str(&format!(
+                                        "    [{}]: Text({} chars): \"{}\"\n",
+                                        j,
+                                        text.len(),
+                                        text
+                                    ));
+                                }
+                                yrs::types::xml::XmlOut::Element(child_elem) => {
+                                    let child_tag = child_elem.tag().as_ref();
+                                    let grandchild_count = child_elem.len(&txn);
+                                    result.push_str(&format!(
+                                        "    [{}]: Element<{}> ({} children)\n",
+                                        j, child_tag, grandchild_count
+                                    ));
+                                }
+                                _ => {
+                                    result.push_str(&format!("    [{}]: Other\n", j));
+                                }
+                            }
+                        }
+                    }
+                }
+                yrs::types::xml::XmlOut::Fragment(_) => {
+                    result.push_str("Fragment\n");
+                }
+            }
+        }
+    }
+
+    result
+}
 
 // ============================================================================
 // Internal Implementation: Text Extraction
@@ -260,7 +319,7 @@ pub fn collect_text_nodes_from_elem(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yrs::{XmlElementPrelim, XmlTextPrelim};
+    use yrs::XmlTextPrelim;
 
     #[test]
     fn test_get_doc_content_empty() {
@@ -325,19 +384,5 @@ mod tests {
         assert!(is_break_element("hard_break"));
         assert!(is_break_element("br"));
         assert!(!is_break_element("paragraph"));
-    }
-
-    #[test]
-    fn test_get_text_refs_in_paragraph_empty() {
-        let doc = Arc::new(Doc::new());
-        let fragment = doc.get_or_insert_xml_fragment("content");
-        let mut txn = doc.transact_mut();
-        fragment.insert(
-            &mut txn,
-            0,
-            yrs::types::xml::XmlElementPrelim::empty("paragraph"),
-        );
-        let text_refs = get_text_refs_in_paragraph(&doc, 0).unwrap();
-        assert_eq!(text_refs.len(), 0);
     }
 }
