@@ -19,7 +19,7 @@ pub async fn new_composer(
     println!("result: {}", result);
     // THIS IS THE MARKS FLOW. USE IF ELEMENt FLOW DOESN'T WORK
     // 使用 prepare_words 預處理單詞（添加空格和換行符）
-    let words = crate::editor::format_word_stream(&result);
+    // let words = crate::editor::format_word_stream(&result);
     // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
     // Generate a unique run ID for this AI generation
     let run_id = format!("extender-{}", std::time::SystemTime::now()

@@ -42,7 +42,19 @@ export const AISuggestion = Mark.create({
   renderHTML({ HTMLAttributes }) {
     const status = HTMLAttributes.status || 'pending'
     
-    // Build class string based on status
+    // For pending suggestions, render normally - aiGhostExtension will add ghost styling via decorations
+    if (status === 'pending') {
+      return [
+        'span',
+        mergeAttributes(HTMLAttributes, {
+          'data-type': 'ai-suggestion',
+          class: 'ai-suggestion-pending',
+        }),
+        0, // Render text content inside
+      ]
+    }
+    
+    // Build class string based on status for non-pending
     const classes = [
       'ai-suggestion',
       `ai-suggestion-${status}`

@@ -70,20 +70,10 @@ pub async fn start_http(
 
     let _sub = doc.observe_update_v1(move |_txn, update_event| {
         let update = update_event.update.to_vec();
-        tracing::info!(
-            "📡 Yjs document updated, broadcasting {} bytes to {} subscribers",
-            update.len(),
-            broadcast_tx_for_yjs.receiver_count()
-        );
         // Send binary update to all connected clients
         let send_result = broadcast_tx_for_yjs.send(MessageStructure::YjsUpdate(update));
         if send_result.is_err() {
             tracing::warn!("⚠️ Failed to broadcast Yjs update (no subscribers?)");
-        } else {
-            tracing::info!(
-                "✅ Yjs update broadcasted successfully to {} subscribers",
-                broadcast_tx_for_yjs.receiver_count()
-            );
         }
         let _ = notify_tx.send(Instant::now());
     });

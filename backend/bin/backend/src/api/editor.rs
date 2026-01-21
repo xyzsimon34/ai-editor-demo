@@ -276,7 +276,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     let preview_mode = mode.as_deref() == Some("preview");
 
                                     // Select the correct function based on action
-                                    let result: Result<Option<String>, anyhow::Error> = match cmd_action
+                                    let result: Result<String, anyhow::Error> = match cmd_action
                                         .as_str()
                                     {
                                         // #TODO: This should definitely be matching agent_payload's content to determine which agent to run. We only have one right now.
@@ -314,7 +314,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                         );
                                                     }
                                                     
-                                                    Ok(Some("Agent executed successfully".to_string()))
+                                                    Ok("Agent executed successfully".to_string())
                                                 }
                                                 Err(e) => {
                                                     // Check if it's the "no content" error and handle gracefully
@@ -340,24 +340,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            if let Some(text) = output {
-                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_SUGGESTION",
-                                                    "complete",
-                                                    &text,
-                                                );
-                                            } else {
-                                                // The agent modifies the doc directly via new_composer
-                                                tracing::info!("✅ Applied AI changes via CRDT");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_STATUS",
-                                                    "complete",
-                                                    "AI agent finished successfully",
-                                                );
-                                            }
+                                            // The agent modifies the doc directly via new_composer
+                                            tracing::info!("✅ Applied AI changes via CRDT");
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &output,
+                                            );
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();
