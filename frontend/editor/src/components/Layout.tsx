@@ -1,7 +1,7 @@
 'use client'
 
 import { type HTMLAttributes, type ReactNode } from 'react'
-import { FileText } from 'lucide-react'
+import { FileText, Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -12,17 +12,20 @@ export const Header = ({
   return (
     <header
       className={cn(
-        'sticky top-0 z-50 h-16 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md',
+        'sticky top-0 z-10 h-16 shrink-0 border-b border-zinc-800/50 bg-zinc-950/95 backdrop-blur-sm supports-[backdrop-filter]:bg-zinc-950/80',
         className
       )}
     >
-      <nav className={'flex h-full items-center justify-between px-6 lg:px-8'}>
-        <div className={'flex items-center gap-3'}>
-          <FileText className={'size-6 text-blue-500'} />
-          <h1 className={'text-xl font-semibold text-zinc-100'}>{'AI Editor'}</h1>
+      <nav className={'flex h-full items-center justify-between px-4 lg:px-6'}>
+        <div className={'flex items-center gap-2.5'}>
+          <div className={'relative'}>
+            <FileText className={'size-5 text-blue-500'} />
+            <Sparkles className={'absolute -right-1 -top-1 size-2.5 text-blue-400'} />
+          </div>
+          <h1 className={'text-base font-semibold leading-tight text-zinc-100'}>{'AI Editor'}</h1>
         </div>
 
-        {children && <div className={'flex items-center gap-4'}>{children}</div>}
+        {children && <div className={'flex items-center gap-3'}>{children}</div>}
       </nav>
     </header>
   )

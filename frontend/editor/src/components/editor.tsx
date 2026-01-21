@@ -1,8 +1,8 @@
 'use client'
 
+import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
-import { MessageSquare, Smile, Sparkles, Zap } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -30,7 +30,6 @@ import { useCollaboration, type BackseaterComment } from '@/hooks/useCollaborati
 import { useYjsPersistence } from '@/hooks/useYjsPersistence'
 
 import { AIStatusBubble } from './ai-status-bubble'
-import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
 import { CommentToast } from './comment-toast'
@@ -46,6 +45,22 @@ const FOCUS_DELAY_MS = 100
 // Types
 interface EditorProps {
   onSaveStatusChange?: (status: string) => void
+  onSidebarPropsChange?: (props: {
+    isConnected: boolean
+    isServerSynced: boolean
+    saveStatus: string
+    characterCount?: number
+    isAutoModeEnabled: boolean
+    isLinterEnabled: boolean
+    isBackseaterEnabled: boolean
+    isEmojiReplacerEnabled: boolean
+    isPending: boolean
+    remainingTime: number | null
+    onAutoModeToggle: () => void
+    onLinterToggle: () => void
+    onBackseaterToggle: () => void
+    onEmojiReplacerToggle: () => void
+  }) => void
 }
 
 // Subcomponents
@@ -62,65 +77,13 @@ function LoadingState({ isLocalSynced }: { isLocalSynced: boolean }) {
   )
 }
 
-function ConnectionIndicator({ isConnected, isServerSynced }: { isConnected: boolean; isServerSynced: boolean }) {
-  const getClassName = () => {
-    if (isConnected && isServerSynced) return 'text-green-500'
-    if (isConnected) return 'text-blue-500'
-    return 'text-amber-500'
-  }
-
-  const getTitle = () => {
-    if (isConnected && isServerSynced) return 'Synced with server'
-    if (isConnected) return 'Connected, syncing...'
-    return 'Disconnected'
-  }
-
-  const getSymbol = () => {
-    if (isConnected && isServerSynced) return '●'
-    if (isConnected) return '◐'
-    return '○'
-  }
-
-  return (
-    <span className={getClassName()} title={getTitle()}>
-      {getSymbol()}
-    </span>
-  )
-}
-
-function StatusBar({
-  isConnected,
-  isServerSynced,
-  saveStatus,
-  characterCount
-}: {
-  isConnected: boolean
-  isServerSynced: boolean
-  saveStatus: string
-  characterCount?: number
-}) {
-  return (
-    <div
-      className={
-        'fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-zinc-800/90 px-3 py-2 text-xs backdrop-blur-sm'
-      }
-    >
-      <ConnectionIndicator isConnected={isConnected} isServerSynced={isServerSynced} />
-      <span className={'text-zinc-400'}>{saveStatus}</span>
-      {characterCount !== undefined && characterCount > 0 && (
-        <span className={'text-zinc-500'}>{`${characterCount} characters`}</span>
-      )}
-    </div>
-  )
-}
-
 // Helpers
 function requestPersistentStorage() {
   navigator.storage?.persist?.()
 }
 
 // Main Component
-export default function Editor({ onSaveStatusChange }: EditorProps) {
+export default function Editor({ onSaveStatusChange, onSidebarPropsChange }: EditorProps) {
   const [ydoc] = useState(() => new Y.Doc({ gc: false }))
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
   const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
@@ -179,35 +142,28 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   const extensions = [...getExtensions(), ...(yjsExtension ? [yjsExtension] : []), AIGhostExtension, slashCommand]
 
-  const handleAITrigger = () => {
+  const handleAITrigger = useCallback(() => {
     if (runAiCommand && isConnected) {
       asyncGuard.nextId()
       setIsAIGenerating(true)
       runAiCommand('AGENT', { role: 'researcher', mode: 'preview' })
     }
-  }
+  }, [runAiCommand, isConnected, asyncGuard])
 
-  const handleLinterToggle = () => {
+  const handleLinterToggle = useCallback(() => {
     if (!runAiCommand || !isConnected) return
     runAiCommand('TOGGLE', 'LINTER')
-  }
+  }, [runAiCommand, isConnected])
 
-  const handleBackseaterToggle = () => {
+  const handleBackseaterToggle = useCallback(() => {
     if (!runAiCommand || !isConnected) return
     runAiCommand('TOGGLE', 'BACKSEATER')
-  }
+  }, [runAiCommand, isConnected])
 
-  const handleEmojiReplacerToggle = () => {
+  const handleEmojiReplacerToggle = useCallback(() => {
     if (!runAiCommand || !isConnected) return
     runAiCommand('TOGGLE', 'EMOJI_REPLACER')
-  }
-
-  const handleAutoModeToggle = () => {
-    setIsAutoModeEnabled((prev) => {
-      if (prev) cancelScheduled()
-      return !prev
-    })
-  }
+  }, [runAiCommand, isConnected])
 
   const { scheduleAITrigger, cancelScheduled, isPending, remainingTime } = useAutoAITrigger(editorInstance, {
     enabled: isAutoModeEnabled,
@@ -216,6 +172,13 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     minChangeThreshold: 1,
     onTrigger: handleAITrigger
   })
+
+  const handleAutoModeToggle = useCallback(() => {
+    setIsAutoModeEnabled((prev) => {
+      if (prev) cancelScheduled()
+      return !prev
+    })
+  }, [cancelScheduled])
 
   const debouncedUpdates = useDebouncedCallback((editor: EditorInstance) => {
     const charCount = editor.storage.characterCount.characters()
@@ -268,6 +231,48 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     }
   }, [editorInstance, yjsExtension])
 
+  // Notify parent component of sidebar props changes
+  const onSidebarPropsChangeRef = React.useRef(onSidebarPropsChange)
+  useEffect(() => {
+    onSidebarPropsChangeRef.current = onSidebarPropsChange
+  }, [onSidebarPropsChange])
+
+  useEffect(() => {
+    if (onSidebarPropsChangeRef.current) {
+      onSidebarPropsChangeRef.current({
+        isConnected,
+        isServerSynced,
+        saveStatus,
+        characterCount,
+        isAutoModeEnabled,
+        isLinterEnabled,
+        isBackseaterEnabled,
+        isEmojiReplacerEnabled,
+        isPending,
+        remainingTime,
+        onAutoModeToggle: handleAutoModeToggle,
+        onLinterToggle: handleLinterToggle,
+        onBackseaterToggle: handleBackseaterToggle,
+        onEmojiReplacerToggle: handleEmojiReplacerToggle
+      })
+    }
+  }, [
+    isConnected,
+    isServerSynced,
+    saveStatus,
+    characterCount,
+    isAutoModeEnabled,
+    isLinterEnabled,
+    isBackseaterEnabled,
+    isEmojiReplacerEnabled,
+    isPending,
+    remainingTime,
+    handleAutoModeToggle,
+    handleLinterToggle,
+    handleBackseaterToggle,
+    handleEmojiReplacerToggle
+  ])
+
   if (!initialContent || !yjsExtension || !isLocalSynced) {
     return <LoadingState isLocalSynced={isLocalSynced} />
   }
@@ -276,80 +281,6 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
       <AIStatusBubble status={aiStatus} message={aiStatusMessage} />
       <CommentToast comment={currentComment} />
-
-      <StatusBar
-        isConnected={isConnected}
-        isServerSynced={isServerSynced}
-        saveStatus={saveStatus}
-        characterCount={characterCount}
-      />
-
-      <div className={'fixed bottom-6 left-6 z-50 flex items-center gap-3'}>
-        <Button
-          onClick={handleAutoModeToggle}
-          size={'sm'}
-          variant={isAutoModeEnabled ? 'default' : 'outline'}
-          className={
-            isAutoModeEnabled
-              ? 'gap-2 bg-blue-600 text-white hover:bg-blue-700'
-              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
-          }
-        >
-          <Zap className={'size-4'} />
-          {isAutoModeEnabled ? 'Auto AI' : 'Manual'}
-        </Button>
-
-        <Button
-          onClick={handleLinterToggle}
-          size={'sm'}
-          variant={isLinterEnabled ? 'default' : 'outline'}
-          className={
-            isLinterEnabled
-              ? 'gap-2 bg-emerald-600 text-white hover:bg-emerald-700'
-              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
-          }
-          disabled={!isConnected}
-        >
-          <Sparkles className={'size-4'} />
-          {isLinterEnabled ? 'Linter On' : 'Linter Off'}
-        </Button>
-
-        <Button
-          onClick={handleBackseaterToggle}
-          size={'sm'}
-          variant={isBackseaterEnabled ? 'default' : 'outline'}
-          className={
-            isBackseaterEnabled
-              ? 'gap-2 bg-yellow-600 text-white hover:bg-yellow-700'
-              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
-          }
-          disabled={!isConnected}
-        >
-          <MessageSquare className={'size-4'} />
-          {isBackseaterEnabled ? 'Backseater On' : 'Backseater Off'}
-        </Button>
-
-        <Button
-          onClick={handleEmojiReplacerToggle}
-          size={'sm'}
-          variant={isEmojiReplacerEnabled ? 'default' : 'outline'}
-          className={
-            isEmojiReplacerEnabled
-              ? 'gap-2 bg-pink-600 text-white hover:bg-pink-700'
-              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
-          }
-          disabled={!isConnected}
-        >
-          <Smile className={'size-4'} />
-          {isEmojiReplacerEnabled ? 'Emoji Replacer On' : 'Emoji Replacer Off'}
-        </Button>
-
-        {isAutoModeEnabled && isPending && remainingTime !== null && (
-          <span className={'animate-pulse rounded-md bg-blue-600/20 px-3 py-1.5 text-xs text-blue-400'}>
-            {`AI in ${remainingTime}s...`}
-          </span>
-        )}
-      </div>
 
       <EditorRoot>
         <EditorContent
