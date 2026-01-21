@@ -1,6 +1,10 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { createRoot } from 'react-dom/client'
+import React from 'react'
+import Check from '@/components/icons/Check'
+import Close from '@/components/icons/Close'
 
 const pluginKey = new PluginKey('aiGhostExtension')
 
@@ -52,9 +56,8 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                   btnGroup.className = 'inline-flex gap-1 select-none items-center'
 
                   const acceptBtn = document.createElement('button')
-                  acceptBtn.innerHTML = '&#10003;'
                   acceptBtn.className =
-                    'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
                   acceptBtn.title = 'Accept (Tab)'
                   acceptBtn.onmousedown = (e) => {
                     e.preventDefault()
@@ -65,11 +68,12 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                       this.editor.commands.focus()
                     }
                   }
+                  const acceptRoot = createRoot(acceptBtn)
+                  acceptRoot.render(React.createElement(Check, { className: 'size-4' }))
 
                   const rejectBtn = document.createElement('button')
-                  rejectBtn.innerHTML = '&#10005;'
                   rejectBtn.className =
-                    'flex items-center justify-center w-4 h-4 text-[10px] rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
                   rejectBtn.title = 'Reject (Esc)'
                   rejectBtn.onmousedown = (e) => {
                     e.preventDefault()
@@ -79,6 +83,8 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                       this.editor.commands.focus()
                     }
                   }
+                  const rejectRoot = createRoot(rejectBtn)
+                  rejectRoot.render(React.createElement(Close, { className: 'size-4' }))
 
                   btnGroup.appendChild(acceptBtn)
                   btnGroup.appendChild(rejectBtn)
