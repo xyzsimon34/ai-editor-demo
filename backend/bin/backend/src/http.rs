@@ -15,7 +15,7 @@ use tokio::{net::TcpListener, sync::watch};
 
 // Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
 pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
-pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(true);
+pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
 pub static BACKSEATER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
