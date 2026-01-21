@@ -103,6 +103,8 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
   },
 
   addProseMirrorPlugins() {
+    const extension = this // Capture extension reference for widget callbacks (this in Plugin refers to Plugin, not Extension)
+    
     return [
       new Plugin({
         key: pluginKey,
@@ -122,55 +124,55 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
               // Check if there's a marked suggestion first
               const markedSuggestion = findPendingAISuggestion(newState.doc)
               if (!markedSuggestion) {
-                const { text, pos, agentType } = meta
+              const { text, pos, agentType } = meta
 
-                let colorClass = 'text-zinc-500'
-                if (agentType === 'linter') colorClass = 'text-red-500'
-                if (agentType === 'backseater') colorClass = 'text-yellow-500'
+              let colorClass = 'text-zinc-500'
+              if (agentType === 'linter') colorClass = 'text-red-500'
+              if (agentType === 'backseater') colorClass = 'text-yellow-500'
 
-                const widget = Decoration.widget(
-                  pos,
-                  (_view) => {
-                    const container = document.createElement('span')
-                    container.className = 'inline-flex items-center ml-1'
-                    container.style.pointerEvents = 'auto'
+              const widget = Decoration.widget(
+                pos,
+                (_view) => {
+                  const container = document.createElement('span')
+                  container.className = 'inline-flex items-center ml-1'
+                  container.style.pointerEvents = 'auto'
 
-                    const textSpan = document.createElement('span')
-                    textSpan.textContent = text
-                    textSpan.className = `${colorClass} opacity-60 mr-2`
-                    container.appendChild(textSpan)
+                  const textSpan = document.createElement('span')
+                  textSpan.textContent = text
+                  textSpan.className = `${colorClass} opacity-60 mr-2`
+                  container.appendChild(textSpan)
 
-                    const btnGroup = document.createElement('span')
-                    btnGroup.className = 'inline-flex gap-1 select-none items-center'
+                  const btnGroup = document.createElement('span')
+                  btnGroup.className = 'inline-flex gap-1 select-none items-center'
 
-                    const acceptBtn = document.createElement('button')
-                    acceptBtn.className =
-                      'flex items-center justify-center w-4 h-4 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
-                    acceptBtn.title = 'Accept (Tab)'
-                    acceptBtn.onmousedown = (e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
+                  const acceptBtn = document.createElement('button')
+                  acceptBtn.className =
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
+                  acceptBtn.title = 'Accept (Tab)'
+                  acceptBtn.onmousedown = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
 
-                      if (this.editor) {
-                        this.editor.commands.acceptAISuggestion()
-                        this.editor.commands.focus('end')
-                      }
+                    if (extension.editor) {
+                      extension.editor.commands.acceptAISuggestion()
+                      extension.editor.commands.focus('end')
                     }
-                    const acceptRoot = createRoot(acceptBtn)
-                    acceptRoot.render(React.createElement(Check, { className: 'size-4' }))
+                  }
+                  const acceptRoot = createRoot(acceptBtn)
+                  acceptRoot.render(React.createElement(Check, { className: 'size-4' }))
 
-                    const rejectBtn = document.createElement('button')
-                    rejectBtn.className =
-                      'flex items-center justify-center w-4 h-4 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
-                    rejectBtn.title = 'Reject (Esc)'
-                    rejectBtn.onmousedown = (e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (this.editor) {
-                        this.editor.commands.rejectAISuggestion()
-                        this.editor.commands.focus('end')
-                      }
+                  const rejectBtn = document.createElement('button')
+                  rejectBtn.className =
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
+                  rejectBtn.title = 'Reject (Esc)'
+                  rejectBtn.onmousedown = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (extension.editor) {
+                      extension.editor.commands.rejectAISuggestion()
+                      extension.editor.commands.focus('end')
                     }
+                  }
                     const rejectRoot = createRoot(rejectBtn)
                     rejectRoot.render(React.createElement(Close, { className: 'size-4' }))
 
@@ -186,18 +188,16 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
               }
             }
 
-            // Map decorations through document changes first
-            decorationSet = decorationSet.map(tr.mapping, tr.doc)
-            
-            // Always check for marked AI suggestions in the document (they take priority)
+            // Always check for marked AI suggestions FIRST (before mapping)
+            // This ensures decorations persist even through Yjs sync transactions
             const markedSuggestion = findPendingAISuggestion(newState.doc)
             
             // Update storage
-            if (this.editor) {
-              this.editor.storage.aiGhost.markedSuggestion = markedSuggestion
+            if (extension.editor) {
+              extension.editor.storage.aiGhost.markedSuggestion = markedSuggestion
             }
 
-            // Show marked suggestion if it exists (marked suggestions take priority)
+            // If marked suggestion exists, always recreate decorations (don't rely on mapping)
             if (markedSuggestion) {
               let colorClass = 'text-zinc-500'
               if (markedSuggestion.agentType === 'linter') colorClass = 'text-red-500'
@@ -232,9 +232,9 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                     e.preventDefault()
                     e.stopPropagation()
 
-                    if (this.editor) {
-                      this.editor.commands.acceptAISuggestion()
-                      this.editor.commands.focus('end')
+                    if (extension.editor) {
+                      extension.editor.commands.acceptAISuggestion()
+                      extension.editor.commands.focus('end')
                     }
                   }
                   const acceptRoot = createRoot(acceptBtn)
@@ -247,9 +247,9 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                   rejectBtn.onmousedown = (e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    if (this.editor) {
-                      this.editor.commands.rejectAISuggestion()
-                      this.editor.commands.focus('end')
+                    if (extension.editor) {
+                      extension.editor.commands.rejectAISuggestion()
+                      extension.editor.commands.focus('end')
                     }
                   }
                   const rejectRoot = createRoot(rejectBtn)
@@ -266,8 +266,8 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
 
               return DecorationSet.create(newState.doc, [decoration, widget])
             }
-            
-            // Map decorations through document changes
+
+            // Map decorations through document changes (for programmatic suggestions only)
             decorationSet = decorationSet.map(tr.mapping, tr.doc)
             
             return decorationSet
@@ -275,7 +275,85 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
         },
         props: {
           decorations(state) {
-            return this.getState(state)
+            const pluginState = this.getState(state)
+            
+            // If plugin state has decorations, return them
+            // Check if decoration set is not empty by checking if find() returns something
+            if (pluginState && pluginState.find().length > 0) {
+              return pluginState
+            }
+            
+            // Fallback: If decorations are missing but marked suggestion exists, recreate them
+            // This handles cases where Yjs sync transactions clear decorations
+            const markedSuggestion = findPendingAISuggestion(state.doc)
+            if (markedSuggestion) {
+              let colorClass = 'text-zinc-500'
+              if (markedSuggestion.agentType === 'linter') colorClass = 'text-red-500'
+              if (markedSuggestion.agentType === 'backseater') colorClass = 'text-yellow-500'
+
+              const decoration = Decoration.inline(
+                markedSuggestion.from,
+                markedSuggestion.to,
+                {
+                  class: `${colorClass} opacity-60`,
+                  style: 'opacity: 0.6;',
+                }
+              )
+
+              const widget = Decoration.widget(
+                markedSuggestion.to,
+                (_view) => {
+                  const container = document.createElement('span')
+                  container.className = 'inline-flex items-center ml-1'
+                  container.style.pointerEvents = 'auto'
+
+                  const btnGroup = document.createElement('span')
+                  btnGroup.className = 'inline-flex gap-1 select-none items-center'
+
+                  const acceptBtn = document.createElement('button')
+                  acceptBtn.className =
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors cursor-pointer border border-green-500/30'
+                  acceptBtn.title = 'Accept (Tab)'
+                  acceptBtn.onmousedown = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+
+                    if (extension.editor) {
+                      extension.editor.commands.acceptAISuggestion()
+                      extension.editor.commands.focus('end')
+                    }
+                  }
+                  const acceptRoot = createRoot(acceptBtn)
+                  acceptRoot.render(React.createElement(Check, { className: 'size-4' }))
+
+                  const rejectBtn = document.createElement('button')
+                  rejectBtn.className =
+                    'flex items-center justify-center w-4 h-4 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors cursor-pointer border border-red-500/30'
+                  rejectBtn.title = 'Reject (Esc)'
+                  rejectBtn.onmousedown = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (extension.editor) {
+                      extension.editor.commands.rejectAISuggestion()
+                      extension.editor.commands.focus('end')
+                    }
+                  }
+                  const rejectRoot = createRoot(rejectBtn)
+                  rejectRoot.render(React.createElement(Close, { className: 'size-4' }))
+
+                  btnGroup.appendChild(acceptBtn)
+                  btnGroup.appendChild(rejectBtn)
+                  container.appendChild(btnGroup)
+
+                  return container
+                },
+                { side: 1 }
+              )
+
+              return DecorationSet.create(state.doc, [decoration, widget])
+            }
+            
+            return pluginState
           }
         }
       })

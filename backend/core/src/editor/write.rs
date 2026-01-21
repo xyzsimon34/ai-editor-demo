@@ -187,8 +187,6 @@ pub fn append_ai_content_to_doc(
     // 2. Create the Root Map (Outer - matches Mark name) - uses Arc<str> keys for insert_with_attributes
     let mut text_attrs = std::collections::HashMap::<Arc<str>, yrs::Any>::new();
     text_attrs.insert(Arc::from("aisuggestion"), yrs::Any::Map(Arc::new(mark_attrs)));
-
-    // --- CORRECTION START ---
     
     // 3. Create a new XmlText node and insert it into the paragraph
     // We start it empty ("") because we need the reference to it first
@@ -201,8 +199,6 @@ pub fn append_ai_content_to_doc(
         content, 
         text_attrs
     );
-
-    // --- CORRECTION END ---
     
     tracing::info!("Inserted text with Mark attributes at pos {}", insert_pos);
     Ok(())
