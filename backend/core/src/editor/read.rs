@@ -1,5 +1,6 @@
 use std::sync::Arc;
-use yrs::{Doc, GetString, Transact, XmlFragment};
+use yrs::types::xml::XmlElementRef;
+use yrs::{Doc, GetString, ReadTxn, Transact, XmlFragment, Xml};
 
 // ============================================================================
 // Constants: Element Type Definitions
@@ -86,7 +87,7 @@ fn extract_text_from_fragment(
 /// * `is_inline` - 標記當前是否在 inline 上下文中（用於控制換行行為）
 fn extract_text_from_node(
     node: &yrs::types::xml::XmlOut,
-    txn: &yrs::Transaction,
+    txn: &impl yrs::ReadTxn,
     output: &mut String,
     is_inline: bool,
 ) {
@@ -95,6 +96,23 @@ fn extract_text_from_node(
             handle_text_node(text_node, txn, output);
         }
         yrs::types::xml::XmlOut::Element(element_node) => {
+            // Check if this is an AI suggestion element before processing
+            // Skip AI suggestion elements and all their content
+            let tag_name = element_node.tag().as_ref();
+            if tag_name == "span" {
+                let attrs = element_node.attributes(txn);
+                let mut is_ai_suggestion = false;
+                for (key, value) in attrs {
+                    if key == "data-type" && value.to_string(txn) == "ai-suggestion" {
+                        is_ai_suggestion = true;
+                        break;
+                    }
+                }
+                if is_ai_suggestion {
+                    // Skip this element and all its content
+                    return;
+                }
+            }
             handle_element_node(element_node, txn, output, is_inline);
         }
         yrs::types::xml::XmlOut::Fragment(fragment_node) => {
@@ -110,7 +128,7 @@ fn extract_text_from_node(
 /// 處理文字節點：直接提取文字內容
 fn handle_text_node(
     text_node: &yrs::types::xml::XmlTextRef,
-    txn: &yrs::Transaction,
+    txn: &impl yrs::ReadTxn,
     output: &mut String,
 ) {
     let text = text_node.get_string(txn);
@@ -122,7 +140,7 @@ fn handle_text_node(
 /// 處理元素節點：遞迴處理子節點，並根據元素類型添加換行
 fn handle_element_node(
     element_node: &yrs::types::xml::XmlElementRef,
-    txn: &yrs::Transaction,
+    txn: &impl yrs::ReadTxn,
     output: &mut String,
     is_inline: bool,
 ) {
@@ -154,7 +172,7 @@ fn handle_element_node(
 /// 處理 Fragment 節點：遞迴處理嵌套的 fragment
 fn handle_fragment_node(
     fragment_node: &yrs::types::xml::XmlFragmentRef,
-    txn: &yrs::Transaction,
+    txn: &impl yrs::ReadTxn,
     output: &mut String,
     is_inline: bool,
 ) {

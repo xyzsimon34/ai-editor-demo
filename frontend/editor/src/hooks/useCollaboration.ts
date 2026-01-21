@@ -11,7 +11,13 @@ interface AiCommandPayload {
 
 interface AIStatusMessage {
   type: 'AI_STATUS'
-  status: 'thinking' | 'done'
+  status: 'thinking' | 'done' | 'error' | 'complete'
+  message: string
+}
+
+interface AISuggestionMessage {
+  type: 'AI_SUGGESTION'
+  status: 'complete'
   message: string
 }
 
@@ -19,24 +25,26 @@ interface SyncCompleteMessage {
   type: 'SYNC_COMPLETE'
 }
 
-interface UseCollaborationReturn {
-  status: ConnectionStatus
-  aiStatus: AIStatus
-  isServerSynced: boolean
-  runAiCommand: (action: string, payload?: AiPayload) => void
-}
-
-interface BackseaterComment {
+export interface BackseaterComment {
   type: 'COMMENT'
   comment_on: string
   comment: string
   color_hex: string
 }
 
+interface UseCollaborationReturn {
+  status: ConnectionStatus
+  aiStatus: AIStatus
+  aiStatusMessage?: string
+  isServerSynced: boolean
+  runAiCommand: (action: string, payload?: AiPayload) => void
+  onToggleStateChange?: (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => void
+}
+
 type AiPayload = Record<string, unknown> | string | number | boolean | null
-type AIStatus = 'idle' | 'thinking' | 'done'
+type AIStatus = 'idle' | 'thinking' | 'done' | 'error' | 'complete'
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
-type WebSocketMessage = AIStatusMessage | SyncCompleteMessage
+type WebSocketMessage = AIStatusMessage | SyncCompleteMessage | AISuggestionMessage | BackseaterComment
 
 const RECONNECT_DELAY_MS = 3000
 const CLEAN_CLOSE_CODE = 1000
@@ -49,13 +57,35 @@ function isWebSocketOpen(socket: WebSocket | null): boolean {
   return socket?.readyState === WebSocket.OPEN
 }
 
-export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollaborationReturn {
+export function useCollaboration(
+  ydoc: Y.Doc,
+  isLocalSynced: boolean,
+  onAiSuggestion?: (text: string) => void,
+  onComment?: (comment: BackseaterComment) => void,
+  onToggleStateChange?: (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => void
+): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | undefined>(undefined)
   const [isServerSynced, setIsServerSynced] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const hasReceivedFirstUpdate = useRef(false)
+  const onAiSuggestionRef = useRef(onAiSuggestion)
+  const onCommentRef = useRef(onComment)
+  const onToggleStateChangeRef = useRef(onToggleStateChange)
+
+  useEffect(() => {
+    onAiSuggestionRef.current = onAiSuggestion
+  }, [onAiSuggestion])
+
+  useEffect(() => {
+    onCommentRef.current = onComment
+  }, [onComment])
+
+  useEffect(() => {
+    onToggleStateChangeRef.current = onToggleStateChange
+  }, [onToggleStateChange])
 
   const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
@@ -100,8 +130,37 @@ export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollab
     const handleJsonMessage = (data: string) => {
       try {
         const parsed = JSON.parse(data) as WebSocketMessage
-        if (parsed.type === 'AI_STATUS') setAiStatus(parsed.status)
-        else if (parsed.type === 'SYNC_COMPLETE') setIsServerSynced(true)
+        if (parsed.type === 'AI_STATUS') {
+          const message = parsed.message.toLowerCase()
+          const isToggleStateMessage = 
+            (message.includes('linter') || message.includes('backseater') || message.includes('emoji replacer') || message.includes('emoji_replacer')) &&
+            (message.includes('enabled') || message.includes('disabled'))
+          
+          if (isToggleStateMessage) {
+            if (message.includes('linter')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('LINTER', enabled)
+            } else if (message.includes('backseater')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('BACKSEATER', enabled)
+            } else if (message.includes('emoji replacer') || message.includes('emoji_replacer')) {
+              const enabled = message.includes('enabled')
+              onToggleStateChangeRef.current?.('EMOJI_REPLACER', enabled)
+            }
+            return
+          }
+          
+          setAiStatus(parsed.status)
+          setAiStatusMessage(parsed.message)
+        } else if (parsed.type === 'SYNC_COMPLETE') {
+          setIsServerSynced(true)
+        } else if (parsed.type === 'AI_SUGGESTION') {
+          onAiSuggestionRef.current?.(parsed.message)
+          setAiStatus('done')
+          setAiStatusMessage(undefined)
+        } else if (parsed.type === 'COMMENT') {
+          onCommentRef.current?.(parsed)
+        }
       } catch {
         // Ignore non-JSON messages
       }
@@ -146,5 +205,5 @@ export function useCollaboration(ydoc: Y.Doc, isLocalSynced: boolean): UseCollab
     }
   }, [ydoc, isLocalSynced])
 
-  return { status, aiStatus, isServerSynced, runAiCommand }
+  return { status, aiStatus, aiStatusMessage, isServerSynced, runAiCommand, onToggleStateChange }
 }

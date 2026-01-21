@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
-import { Sparkles, Zap } from 'lucide-react'
+import { MessageSquare, Smile, Sparkles, Zap } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -20,19 +20,20 @@ import {
 import { useDebouncedCallback } from 'use-debounce'
 import * as Y from 'yjs'
 
-import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
+import { AIGhostExtension } from '@/lib/aiGhostExtension'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
-import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
-import { useCollaboration } from '@/hooks/useCollaboration'
-import { useYjsPersistence } from '@/hooks/useYjsPersistence'
 import { useAsyncGuard } from '@/hooks/useAsyncGuard'
+import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
+import { useCollaboration, type BackseaterComment } from '@/hooks/useCollaboration'
+import { useYjsPersistence } from '@/hooks/useYjsPersistence'
 
 import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
+import { CommentToast } from './comment-toast'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
 import { slashCommand, suggestionItems } from './slash-command'
 
@@ -122,18 +123,47 @@ function requestPersistentStorage() {
 export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [ydoc] = useState(() => new Y.Doc({ gc: false }))
   const [yXmlFragment] = useState(() => ydoc.getXmlFragment('content'))
+  const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
+
+  const handleAiSuggestion = (text: string) => {
+    editorInstance?.commands.setAISuggestion(text)
+  }
+
+  const [currentComment, setCurrentComment] = useState<BackseaterComment | null>(null)
+
+  const handleComment = (comment: BackseaterComment) => {
+    setCurrentComment(comment)
+  }
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
-  const { status: collaborationStatus, aiStatus, isServerSynced, runAiCommand } = useCollaboration(ydoc, isLocalSynced)
+  
+  const handleToggleStateChange = useCallback((toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => {
+    if (toggleType === 'LINTER') {
+      setIsLinterEnabled(enabled)
+    } else if (toggleType === 'BACKSEATER') {
+      setIsBackseaterEnabled(enabled)
+    } else if (toggleType === 'EMOJI_REPLACER') {
+      setIsEmojiReplacerEnabled(enabled)
+    }
+  }, [])
+
+  const {
+    status: collaborationStatus,
+    aiStatus,
+    aiStatusMessage,
+    isServerSynced,
+    runAiCommand
+  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion, handleComment, handleToggleStateChange)
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
   const [characterCount, setCharacterCount] = useState<number>()
-  const [editorInstance, setEditorInstance] = useState<EditorInstance | null>(null)
   const [isGenerativeMenuOpen, setIsGenerativeMenuOpen] = useState(false)
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
   const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
   const [isLinterEnabled, setIsLinterEnabled] = useState(false)
+  const [isBackseaterEnabled, setIsBackseaterEnabled] = useState(false)
+  const [isEmojiReplacerEnabled, setIsEmojiReplacerEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
   const asyncGuard = useAsyncGuard()
 
@@ -147,25 +177,29 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     requestPersistentStorage()
   }, [])
 
-  const extensions = [
-    ...getExtensions(),
-    ...(yjsExtension ? [yjsExtension] : []),
-    AIHighlightDecorationExtension,
-    slashCommand
-  ]
+  const extensions = [...getExtensions(), ...(yjsExtension ? [yjsExtension] : []), AIGhostExtension, slashCommand]
 
   const handleAITrigger = () => {
     if (runAiCommand && isConnected) {
       asyncGuard.nextId()
       setIsAIGenerating(true)
-      runAiCommand('AGENT', { role: 'researcher' })
+      runAiCommand('AGENT', { role: 'researcher', mode: 'preview' })
     }
   }
 
   const handleLinterToggle = () => {
     if (!runAiCommand || !isConnected) return
-    setIsLinterEnabled((prev) => !prev)
     runAiCommand('TOGGLE', 'LINTER')
+  }
+
+  const handleBackseaterToggle = () => {
+    if (!runAiCommand || !isConnected) return
+    runAiCommand('TOGGLE', 'BACKSEATER')
+  }
+
+  const handleEmojiReplacerToggle = () => {
+    if (!runAiCommand || !isConnected) return
+    runAiCommand('TOGGLE', 'EMOJI_REPLACER')
   }
 
   const handleAutoModeToggle = () => {
@@ -179,7 +213,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     enabled: isAutoModeEnabled,
     debounceMs: 3000,
     minCharacters: 10,
-    minChangeThreshold: 10,
+    minChangeThreshold: 1,
     onTrigger: handleAITrigger
   })
 
@@ -197,6 +231,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
       if (isAIGenerating) {
         asyncGuard.cancel()
         setIsAIGenerating(false)
+        editor.commands.clearAISuggestion()
       }
       scheduleAITrigger()
     }
@@ -216,9 +251,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
       if (requestIdAtResponse === 0) return
 
-      editorInstance.commands.highlightAIText('[AI was here]')
       setTimeout(() => {
-        editorInstance.commands.clearAIHighlight()
         if (asyncGuard.isLatest(requestIdAtResponse)) {
           setIsAIGenerating(false)
           asyncGuard.cancel()
@@ -230,7 +263,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     return () => {
       ydoc.off('update', handleYjsUpdate)
     }
-  }, [ydoc, editorInstance, yjsExtension])
+  }, [ydoc, editorInstance, yjsExtension, asyncGuard])
 
   useEffect(() => {
     if (editorInstance && yjsExtension) {
@@ -244,7 +277,8 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   return (
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
-      <AIStatusBubble status={aiStatus} />
+      <AIStatusBubble status={aiStatus} message={aiStatusMessage} />
+      <CommentToast comment={currentComment} />
 
       <StatusBar
         isConnected={isConnected}
@@ -283,6 +317,36 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
           {isLinterEnabled ? 'Linter On' : 'Linter Off'}
         </Button>
 
+        <Button
+          onClick={handleBackseaterToggle}
+          size={'sm'}
+          variant={isBackseaterEnabled ? 'default' : 'outline'}
+          className={
+            isBackseaterEnabled
+              ? 'gap-2 bg-yellow-600 text-white hover:bg-yellow-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
+          disabled={!isConnected}
+        >
+          <MessageSquare className={'size-4'} />
+          {isBackseaterEnabled ? 'Backseater On' : 'Backseater Off'}
+        </Button>
+
+        <Button
+          onClick={handleEmojiReplacerToggle}
+          size={'sm'}
+          variant={isEmojiReplacerEnabled ? 'default' : 'outline'}
+          className={
+            isEmojiReplacerEnabled
+              ? 'gap-2 bg-pink-600 text-white hover:bg-pink-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
+          disabled={!isConnected}
+        >
+          <Smile className={'size-4'} />
+          {isEmojiReplacerEnabled ? 'Emoji Replacer On' : 'Emoji Replacer Off'}
+        </Button>
+
         {isAutoModeEnabled && isPending && remainingTime !== null && (
           <span className={'animate-pulse rounded-md bg-blue-600/20 px-3 py-1.5 text-xs text-blue-400'}>
             {`AI in ${remainingTime}s...`}
@@ -306,9 +370,16 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
                 'prose prose-lg prose-invert prose-headings:font-title font-default focus:outline-none max-w-3xl mx-auto px-8 py-16 text-zinc-200'
             }
           }}
-          onUpdate={({ editor }) => {
+          onUpdate={({ editor, transaction }) => {
             setEditorInstance(editor)
-            debouncedUpdates(editor)
+
+            const aiMeta = transaction.getMeta('aiGhost')
+            const isAIOperation = aiMeta?.action === 'set' || aiMeta?.action === 'clear'
+
+            if (!isAIOperation) {
+              debouncedUpdates(editor)
+            }
+
             setSaveStatus('Unsaved')
             onSaveStatusChange?.('Unsaved')
           }}

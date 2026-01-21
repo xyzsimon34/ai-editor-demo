@@ -1,14 +1,16 @@
 use crate::llm::tools::extender;
 use crate::llm::tools::linter;
 use anyhow::Result;
-use std::sync::Arc;
-use yrs::{Doc, Transact, Xml, XmlFragment};
+use std::sync::{Arc, atomic::AtomicU64};
+use yrs::{Doc, Transact, XmlFragment};
 pub async fn new_composer(
     api_key: &str,
     role: &str,
     doc: &Arc<Doc>,
-    _user_state: &crate::editor::UserWritingState,
-) -> Result<()> {
+    user_last_used_at: Arc<AtomicU64>,
+    user_writing_timeout_ms: u64,
+    preview_mode: bool,
+) -> Result<Option<String>> {
     let api_key = api_key.to_string();
     let article_draft = crate::editor::get_doc_content(doc);
     let result = extender::execute_tool(&article_draft, role, &api_key)
@@ -26,6 +28,10 @@ pub async fn new_composer(
         .as_millis());
     crate::editor::append_ai_content_to_doc(doc, &result, Some("extender"), Some(&run_id))?;
 
+
+    if preview_mode {
+        return Ok(Some(result));
+    }
 
     // 使用 format_word_stream 預處理單詞（添加空格和換行符）
     // let words = crate::editor::format_word_stream(&result);
@@ -45,7 +51,7 @@ pub async fn new_composer(
     //     tracing::warn!("⚠️ Fragment has no root element to append AI content to");
     // }
 
-    Ok(())
+    Ok(None)
 }
 
 pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
