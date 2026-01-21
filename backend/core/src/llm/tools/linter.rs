@@ -106,7 +106,7 @@ fn parse_xml_string(xml: &str) -> Result<Vec<XmlPrelim>> {
             }
         }
     }
-
+    info!("Parsed XML: {:?}", result);
     Ok(result)
 }
 
@@ -255,8 +255,11 @@ fn insert_xml_prelim(
                 let elem_prelim = yrs::types::xml::XmlElementPrelim::empty(tag.as_str());
                 let elem = fragment.insert(txn, fragment.len(txn), elem_prelim);
 
+                // Convert attributes to child elements
                 for (key, value) in attrs {
-                    elem.insert_attribute(txn, key.as_str(), value.as_str());
+                    let attr_elem_prelim = yrs::types::xml::XmlElementPrelim::empty(key.as_str());
+                    let attr_elem = elem.insert(txn, elem.len(txn), attr_elem_prelim);
+                    attr_elem.insert(txn, 0, yrs::XmlTextPrelim::new(value));
                 }
 
                 for child in children {
@@ -284,8 +287,11 @@ fn insert_xml_prelim_into_element(
             let elem_prelim = yrs::types::xml::XmlElementPrelim::empty(tag.as_str());
             let child_elem = elem.insert(txn, elem.len(txn), elem_prelim);
 
+            // Convert attributes to child elements
             for (key, value) in attrs {
-                child_elem.insert_attribute(txn, key.as_str(), value.as_str());
+                let attr_elem_prelim = yrs::types::xml::XmlElementPrelim::empty(key.as_str());
+                let attr_elem = child_elem.insert(txn, child_elem.len(txn), attr_elem_prelim);
+                attr_elem.insert(txn, 0, yrs::XmlTextPrelim::new(value));
             }
 
             for child in children {
@@ -365,4 +371,378 @@ Your sole purpose is to:
         "XML fragment content replaced, transaction should have committed and triggered observer"
     );
     Ok((ai_output, doc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_empty_string() {
+        let result = parse_xml_string("").unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_whitespace_only() {
+        let result = parse_xml_string("   \n\t  ").unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_pure_text() {
+        let result = parse_xml_string("Hello world").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Text(text) => assert_eq!(text, "Hello world"),
+            _ => panic!("Expected Text variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_with_whitespace() {
+        let result = parse_xml_string("  Hello world  ").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Text(text) => assert_eq!(text.trim(), "Hello world"),
+            _ => panic!("Expected Text variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_element() {
+        let result = parse_xml_string("<div></div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element {
+                tag,
+                attrs,
+                children,
+            } => {
+                assert_eq!(tag, "div");
+                assert_eq!(attrs.len(), 0);
+                assert_eq!(children.len(), 0);
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_whitespace() {
+        let result = parse_xml_string("  <div>  </div>  ").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "div"),
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_self_closing_tag() {
+        let result = parse_xml_string("<br/>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element {
+                tag,
+                attrs,
+                children,
+            } => {
+                assert_eq!(tag, "br");
+                assert_eq!(attrs.len(), 0);
+                assert_eq!(children.len(), 0);
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_self_closing_tag_with_whitespace() {
+        let result = parse_xml_string("<br />").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "br"),
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_single_attribute() {
+        let result = parse_xml_string(r#"<div id="test"></div>"#).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, attrs, .. } => {
+                assert_eq!(tag, "div");
+                assert_eq!(attrs.len(), 1);
+                assert_eq!(attrs[0], ("id".to_string(), "test".to_string()));
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_multiple_attributes() {
+        let result = parse_xml_string(r#"<div id="test" class="container"></div>"#).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, attrs, .. } => {
+                assert_eq!(tag, "div");
+                assert_eq!(attrs.len(), 2);
+                assert_eq!(attrs[0], ("id".to_string(), "test".to_string()));
+                assert_eq!(attrs[1], ("class".to_string(), "container".to_string()));
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_text_child() {
+        let result = parse_xml_string("<div>Hello</div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, children, .. } => {
+                assert_eq!(tag, "div");
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    XmlPrelim::Text(text) => assert_eq!(text, "Hello"),
+                    _ => panic!("Expected Text child"),
+                }
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_text_and_whitespace() {
+        let result = parse_xml_string("<div>  Hello  </div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { children, .. } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    XmlPrelim::Text(text) => assert_eq!(text.trim(), "Hello"),
+                    _ => panic!("Expected Text child"),
+                }
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_elements() {
+        let result = parse_xml_string("<div><span>Hello</span></div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, children, .. } => {
+                assert_eq!(tag, "div");
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    XmlPrelim::Element { tag, children, .. } => {
+                        assert_eq!(tag, "span");
+                        assert_eq!(children.len(), 1);
+                        match &children[0] {
+                            XmlPrelim::Text(text) => assert_eq!(text, "Hello"),
+                            _ => panic!("Expected Text in nested element"),
+                        }
+                    }
+                    _ => panic!("Expected nested Element"),
+                }
+            }
+            _ => panic!("Expected Element variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_root_elements() {
+        let result = parse_xml_string("<div></div><span></span>").unwrap();
+        assert_eq!(result.len(), 2);
+        match &result[0] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "div"),
+            _ => panic!("Expected Element"),
+        }
+        match &result[1] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "span"),
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mixed_content_text_and_elements() {
+        let result = parse_xml_string("Before<div></div>After").unwrap();
+        assert_eq!(result.len(), 3);
+        match &result[0] {
+            XmlPrelim::Text(text) => assert_eq!(text, "Before"),
+            _ => panic!("Expected Text"),
+        }
+        match &result[1] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "div"),
+            _ => panic!("Expected Element"),
+        }
+        match &result[2] {
+            XmlPrelim::Text(text) => assert_eq!(text, "After"),
+            _ => panic!("Expected Text"),
+        }
+    }
+
+    #[test]
+    fn test_parse_element_with_mixed_children() {
+        let result = parse_xml_string("<div>Text1<span></span>Text2</div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { children, .. } => {
+                assert_eq!(children.len(), 3);
+                match &children[0] {
+                    XmlPrelim::Text(text) => assert_eq!(text, "Text1"),
+                    _ => panic!("Expected Text"),
+                }
+                match &children[1] {
+                    XmlPrelim::Element { tag, .. } => assert_eq!(tag, "span"),
+                    _ => panic!("Expected Element"),
+                }
+                match &children[2] {
+                    XmlPrelim::Text(text) => assert_eq!(text, "Text2"),
+                    _ => panic!("Expected Text"),
+                }
+            }
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tag_with_hyphen() {
+        let result = parse_xml_string("<my-tag></my-tag>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "my-tag"),
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tag_with_underscore() {
+        let result = parse_xml_string("<my_tag></my_tag>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { tag, .. } => assert_eq!(tag, "my_tag"),
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_attribute_with_special_chars() {
+        let result = parse_xml_string(r#"<div data-value="test-value"></div>"#).unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { attrs, .. } => {
+                assert_eq!(attrs[0].1, "test-value");
+            }
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_text_nodes_ignored() {
+        let result = parse_xml_string("<div>   </div>").unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element { children, .. } => {
+                assert_eq!(children.len(), 0);
+            }
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_complex_nested_structure() {
+        let result =
+            parse_xml_string(r#"<div id="outer"><span class="inner">Text</span><p>Para</p></div>"#)
+                .unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element {
+                tag,
+                attrs,
+                children,
+            } => {
+                assert_eq!(tag, "div");
+                assert_eq!(attrs.len(), 1);
+                assert_eq!(attrs[0].0, "id");
+                assert_eq!(attrs[0].1, "outer");
+                assert_eq!(children.len(), 2);
+            }
+            _ => panic!("Expected Element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_malformed_missing_closing_tag() {
+        let result = parse_xml_string("<div>");
+        assert!(result.is_err() || result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_malformed_mismatched_tags() {
+        let result = parse_xml_string("<div></span>");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_malformed_unclosed_attribute() {
+        let result = parse_xml_string(r#"<div id="test></div>"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_element_with_attributes() {
+        let result = parse_xml_string(
+            r#"<paragraph id="p1" class="content">
+Yesterday I
+<del>go</del>
+<ins>went</ins>
+to the store and I
+<del>buying</del>
+<ins>bought</ins>
+</paragraph>"#,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            XmlPrelim::Element {
+                tag,
+                attrs,
+                children,
+            } => {
+                assert_eq!(tag, "paragraph");
+                assert_eq!(attrs.len(), 2);
+                assert_eq!(attrs[0], ("id".to_string(), "p1".to_string()));
+                assert_eq!(attrs[1], ("class".to_string(), "content".to_string()));
+                // Verify children: Text, del, ins, Text, del, ins
+                assert_eq!(children.len(), 6);
+                match &children[0] {
+                    XmlPrelim::Text(text) => assert!(text.contains("Yesterday I")),
+                    _ => panic!("Expected Text at children[0]"),
+                }
+                match &children[1] {
+                    XmlPrelim::Element { tag, .. } => assert_eq!(tag, "del"),
+                    _ => panic!("Expected del Element"),
+                }
+                match &children[2] {
+                    XmlPrelim::Element { tag, .. } => assert_eq!(tag, "ins"),
+                    _ => panic!("Expected ins Element"),
+                }
+                match &children[3] {
+                    XmlPrelim::Text(text) => assert!(text.contains("to the store")),
+                    _ => panic!("Expected Text at children[3]"),
+                }
+                match &children[4] {
+                    XmlPrelim::Element { tag, .. } => assert_eq!(tag, "del"),
+                    _ => panic!("Expected del Element"),
+                }
+                match &children[5] {
+                    XmlPrelim::Element { tag, .. } => assert_eq!(tag, "ins"),
+                    _ => panic!("Expected ins Element"),
+                }
+            }
+            _ => panic!("Expected Element"),
+        }
+    }
 }
