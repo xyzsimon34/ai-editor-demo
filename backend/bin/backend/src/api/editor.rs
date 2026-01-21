@@ -128,17 +128,21 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         let state_for_task = state.clone();
                         let cmd_action = cmd.action.clone();
                         let cmd_payload = cmd.payload.clone();
-                        let _ =
-                            state_for_task
-                                .editor_broadcast_tx
-                                .send(MessageStructure::AiCommand(
-                                    serde_json::json!({
-                                        "type": "AI_STATUS",
-                                        "status": "thinking",
-                                        "message": "Polishing your text..."
-                                    })
-                                    .to_string(),
-                                ));
+                        
+                        if cmd_action != "TOGGLE" {
+                            let _ =
+                                state_for_task
+                                    .editor_broadcast_tx
+                                    .send(MessageStructure::AiCommand(
+                                        serde_json::json!({
+                                            "type": "AI_STATUS",
+                                            "status": "thinking",
+                                            "message": "Polishing your text..."
+                                        })
+                                        .to_string(),
+                                    ));
+                        }
+                        
                         tokio::spawn(async move {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
