@@ -25,6 +25,13 @@ interface SyncCompleteMessage {
   type: 'SYNC_COMPLETE'
 }
 
+export interface BackseaterComment {
+  type: 'COMMENT'
+  comment_on: string
+  comment: string
+  color_hex: string
+}
+
 interface UseCollaborationReturn {
   status: ConnectionStatus
   aiStatus: AIStatus
@@ -32,17 +39,10 @@ interface UseCollaborationReturn {
   runAiCommand: (action: string, payload?: AiPayload) => void
 }
 
-interface BackseaterComment {
-  type: 'COMMENT'
-  comment_on: string
-  comment: string
-  color_hex: string
-}
-
 type AiPayload = Record<string, unknown> | string | number | boolean | null
 type AIStatus = 'idle' | 'thinking' | 'done' | 'error' | 'complete'
 type ConnectionStatus = 'disconnected' | 'connected' | 'connecting'
-type WebSocketMessage = AIStatusMessage | SyncCompleteMessage | AISuggestionMessage
+type WebSocketMessage = AIStatusMessage | SyncCompleteMessage | AISuggestionMessage | BackseaterComment
 
 const RECONNECT_DELAY_MS = 3000
 const CLEAN_CLOSE_CODE = 1000
@@ -58,7 +58,8 @@ function isWebSocketOpen(socket: WebSocket | null): boolean {
 export function useCollaboration(
   ydoc: Y.Doc,
   isLocalSynced: boolean,
-  onAiSuggestion?: (text: string) => void
+  onAiSuggestion?: (text: string) => void,
+  onComment?: (comment: BackseaterComment) => void
 ): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
@@ -67,10 +68,15 @@ export function useCollaboration(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const hasReceivedFirstUpdate = useRef(false)
   const onAiSuggestionRef = useRef(onAiSuggestion)
+  const onCommentRef = useRef(onComment)
 
   useEffect(() => {
     onAiSuggestionRef.current = onAiSuggestion
   }, [onAiSuggestion])
+
+  useEffect(() => {
+    onCommentRef.current = onComment
+  }, [onComment])
 
   const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
@@ -122,6 +128,8 @@ export function useCollaboration(
         } else if (parsed.type === 'AI_SUGGESTION') {
           onAiSuggestionRef.current?.(parsed.message)
           setAiStatus('done')
+        } else if (parsed.type === 'COMMENT') {
+          onCommentRef.current?.(parsed)
         }
       } catch {
         // Ignore non-JSON messages

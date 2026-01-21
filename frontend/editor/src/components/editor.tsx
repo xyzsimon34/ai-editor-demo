@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
-import { Sparkles, Zap } from 'lucide-react'
+import { MessageSquare, Sparkles, Zap } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -21,19 +21,19 @@ import { useDebouncedCallback } from 'use-debounce'
 import * as Y from 'yjs'
 
 import { AIGhostExtension } from '@/lib/aiGhostExtension'
-import { AIHighlightDecorationExtension } from '@/lib/aiHighlightDecoration'
 import { getExtensions } from '@/lib/extensions'
 import { uploadFn } from '@/lib/image-upload'
 import { createYjsExtension } from '@/lib/yjsExtension'
 import { useAsyncGuard } from '@/hooks/useAsyncGuard'
 import { useAutoAITrigger } from '@/hooks/useAutoAITrigger'
-import { useCollaboration } from '@/hooks/useCollaboration'
+import { useCollaboration, type BackseaterComment } from '@/hooks/useCollaboration'
 import { useYjsPersistence } from '@/hooks/useYjsPersistence'
 
 import { AIStatusBubble } from './ai-status-bubble'
 import { Button } from './base/Button'
 import { Separator } from './base/Separator'
 import { TextButtons } from './base/TextButtons'
+import { CommentToast } from './comment-toast'
 import GenerativeMenuSwitch from './generative/generative-menu-switch'
 import { slashCommand, suggestionItems } from './slash-command'
 
@@ -129,13 +129,19 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     editorInstance?.commands.setAISuggestion(text)
   }
 
+  const [currentComment, setCurrentComment] = useState<BackseaterComment | null>(null)
+
+  const handleComment = (comment: BackseaterComment) => {
+    setCurrentComment(comment)
+  }
+
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
   const {
     status: collaborationStatus,
     aiStatus,
     isServerSynced,
     runAiCommand
-  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion)
+  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion, handleComment)
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
@@ -144,6 +150,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [yjsExtension, setYjsExtension] = useState<Extension | null>(null)
   const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
   const [isLinterEnabled, setIsLinterEnabled] = useState(false)
+  const [isBackseaterEnabled, setIsBackseaterEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
   const asyncGuard = useAsyncGuard()
 
@@ -171,6 +178,12 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     if (!runAiCommand || !isConnected) return
     setIsLinterEnabled((prev) => !prev)
     runAiCommand('TOGGLE', 'LINTER')
+  }
+
+  const handleBackseaterToggle = () => {
+    if (!runAiCommand || !isConnected) return
+    setIsBackseaterEnabled((prev) => !prev)
+    runAiCommand('TOGGLE', 'BACKSEATER')
   }
 
   const handleAutoModeToggle = () => {
@@ -249,6 +262,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   return (
     <div className={'relative min-h-screen w-full bg-zinc-900'}>
       <AIStatusBubble status={aiStatus} />
+      <CommentToast comment={currentComment} />
 
       <StatusBar
         isConnected={isConnected}
@@ -285,6 +299,21 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
         >
           <Sparkles className={'size-4'} />
           {isLinterEnabled ? 'Linter On' : 'Linter Off'}
+        </Button>
+
+        <Button
+          onClick={handleBackseaterToggle}
+          size={'sm'}
+          variant={isBackseaterEnabled ? 'default' : 'outline'}
+          className={
+            isBackseaterEnabled
+              ? 'gap-2 bg-yellow-600 text-white hover:bg-yellow-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
+          disabled={!isConnected}
+        >
+          <MessageSquare className={'size-4'} />
+          {isBackseaterEnabled ? 'Backseater On' : 'Backseater Off'}
         </Button>
 
         {isAutoModeEnabled && isPending && remainingTime !== null && (

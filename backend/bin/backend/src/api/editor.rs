@@ -399,6 +399,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 ),
                                             );
                                         }
+                                        "BACKSEATER" => {
+                                            tracing::info!("💬 toggling backseater...");
+                                            let current = crate::http::BACKSEATER_FLAG
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            crate::http::BACKSEATER_FLAG.store(
+                                                !current,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &format!(
+                                                    "Backseater {}",
+                                                    if !current { "enabled" } else { "disabled" }
+                                                ),
+                                            );
+                                        }
                                         _ => {
                                             tracing::error!("Unknown toggle target: {}", content);
                                             delegate_to_frontend(
