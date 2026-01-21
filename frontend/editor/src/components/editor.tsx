@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Extension } from '@tiptap/core'
-import { MessageSquare, Sparkles, Zap } from 'lucide-react'
+import { MessageSquare, Smile, Sparkles, Zap } from 'lucide-react'
 import {
   EditorCommand,
   EditorCommandEmpty,
@@ -136,12 +136,23 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   }
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
+  
+  const handleToggleStateChange = useCallback((toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => {
+    if (toggleType === 'LINTER') {
+      setIsLinterEnabled(enabled)
+    } else if (toggleType === 'BACKSEATER') {
+      setIsBackseaterEnabled(enabled)
+    } else if (toggleType === 'EMOJI_REPLACER') {
+      setIsEmojiReplacerEnabled(enabled)
+    }
+  }, [])
+
   const {
     status: collaborationStatus,
     aiStatus,
     isServerSynced,
     runAiCommand
-  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion, handleComment)
+  } = useCollaboration(ydoc, isLocalSynced, handleAiSuggestion, handleComment, handleToggleStateChange)
 
   const [initialContent, setInitialContent] = useState<JSONContent | null>(null)
   const [saveStatus, setSaveStatus] = useState('Saved')
@@ -151,6 +162,7 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
   const [isAutoModeEnabled, setIsAutoModeEnabled] = useState(false)
   const [isLinterEnabled, setIsLinterEnabled] = useState(false)
   const [isBackseaterEnabled, setIsBackseaterEnabled] = useState(false)
+  const [isEmojiReplacerEnabled, setIsEmojiReplacerEnabled] = useState(false)
   const [isAIGenerating, setIsAIGenerating] = useState(false)
   const asyncGuard = useAsyncGuard()
 
@@ -176,14 +188,17 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
 
   const handleLinterToggle = () => {
     if (!runAiCommand || !isConnected) return
-    setIsLinterEnabled((prev) => !prev)
     runAiCommand('TOGGLE', 'LINTER')
   }
 
   const handleBackseaterToggle = () => {
     if (!runAiCommand || !isConnected) return
-    setIsBackseaterEnabled((prev) => !prev)
     runAiCommand('TOGGLE', 'BACKSEATER')
+  }
+
+  const handleEmojiReplacerToggle = () => {
+    if (!runAiCommand || !isConnected) return
+    runAiCommand('TOGGLE', 'EMOJI_REPLACER')
   }
 
   const handleAutoModeToggle = () => {
@@ -314,6 +329,21 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
         >
           <MessageSquare className={'size-4'} />
           {isBackseaterEnabled ? 'Backseater On' : 'Backseater Off'}
+        </Button>
+
+        <Button
+          onClick={handleEmojiReplacerToggle}
+          size={'sm'}
+          variant={isEmojiReplacerEnabled ? 'default' : 'outline'}
+          className={
+            isEmojiReplacerEnabled
+              ? 'gap-2 bg-pink-600 text-white hover:bg-pink-700'
+              : 'gap-2 border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+          }
+          disabled={!isConnected}
+        >
+          <Smile className={'size-4'} />
+          {isEmojiReplacerEnabled ? 'Emoji Replacer On' : 'Emoji Replacer Off'}
         </Button>
 
         {isAutoModeEnabled && isPending && remainingTime !== null && (

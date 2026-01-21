@@ -45,10 +45,42 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         return;
     }
 
-    // 2. Subscribe to server broadcasts
+    let linter_enabled = crate::http::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+    let emoji_replacer_enabled = crate::http::EMOJI_REPLACER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+    let backseater_enabled = crate::http::BACKSEATER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+
+    let _ = sender.send(Message::Text(
+        serde_json::json!({
+            "type": "AI_STATUS",
+            "status": "complete",
+            "message": format!("Linter {}", if linter_enabled { "enabled" } else { "disabled" })
+        })
+        .to_string()
+        .into(),
+    )).await;
+    
+    let _ = sender.send(Message::Text(
+        serde_json::json!({
+            "type": "AI_STATUS",
+            "status": "complete",
+            "message": format!("Emoji replacer {}", if emoji_replacer_enabled { "enabled" } else { "disabled" })
+        })
+        .to_string()
+        .into(),
+    )).await;
+    
+    let _ = sender.send(Message::Text(
+        serde_json::json!({
+            "type": "AI_STATUS",
+            "status": "complete",
+            "message": format!("Backseater {}", if backseater_enabled { "enabled" } else { "disabled" })
+        })
+        .to_string()
+        .into(),
+    )).await;
+
     let mut rx = state.editor_broadcast_tx.subscribe();
 
-    // 3. Handle Incoming/Outgoing Tasks
     let mut send_task = tokio::spawn(async move {
         // rx.recv() now returns a SyncMessage
         while let Ok(msg) = rx.recv().await {

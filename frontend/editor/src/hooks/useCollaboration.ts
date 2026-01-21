@@ -37,6 +37,7 @@ interface UseCollaborationReturn {
   aiStatus: AIStatus
   isServerSynced: boolean
   runAiCommand: (action: string, payload?: AiPayload) => void
+  onToggleStateChange?: (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => void
 }
 
 type AiPayload = Record<string, unknown> | string | number | boolean | null
@@ -59,7 +60,8 @@ export function useCollaboration(
   ydoc: Y.Doc,
   isLocalSynced: boolean,
   onAiSuggestion?: (text: string) => void,
-  onComment?: (comment: BackseaterComment) => void
+  onComment?: (comment: BackseaterComment) => void,
+  onToggleStateChange?: (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => void
 ): UseCollaborationReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [aiStatus, setAiStatus] = useState<AIStatus>('idle')
@@ -69,6 +71,7 @@ export function useCollaboration(
   const hasReceivedFirstUpdate = useRef(false)
   const onAiSuggestionRef = useRef(onAiSuggestion)
   const onCommentRef = useRef(onComment)
+  const onToggleStateChangeRef = useRef(onToggleStateChange)
 
   useEffect(() => {
     onAiSuggestionRef.current = onAiSuggestion
@@ -77,6 +80,10 @@ export function useCollaboration(
   useEffect(() => {
     onCommentRef.current = onComment
   }, [onComment])
+
+  useEffect(() => {
+    onToggleStateChangeRef.current = onToggleStateChange
+  }, [onToggleStateChange])
 
   const runAiCommand = useCallback((action: string, payload?: AiPayload) => {
     const ws = wsRef.current
@@ -123,6 +130,17 @@ export function useCollaboration(
         const parsed = JSON.parse(data) as WebSocketMessage
         if (parsed.type === 'AI_STATUS') {
           setAiStatus(parsed.status)
+          const message = parsed.message.toLowerCase()
+          if (message.includes('linter')) {
+            const enabled = message.includes('enabled')
+            onToggleStateChangeRef.current?.('LINTER', enabled)
+          } else if (message.includes('backseater')) {
+            const enabled = message.includes('enabled')
+            onToggleStateChangeRef.current?.('BACKSEATER', enabled)
+          } else if (message.includes('emoji replacer') || message.includes('emoji_replacer')) {
+            const enabled = message.includes('enabled')
+            onToggleStateChangeRef.current?.('EMOJI_REPLACER', enabled)
+          }
         } else if (parsed.type === 'SYNC_COMPLETE') {
           setIsServerSynced(true)
         } else if (parsed.type === 'AI_SUGGESTION') {
@@ -175,5 +193,5 @@ export function useCollaboration(
     }
   }, [ydoc, isLocalSynced])
 
-  return { status, aiStatus, isServerSynced, runAiCommand }
+  return { status, aiStatus, isServerSynced, runAiCommand, onToggleStateChange }
 }
