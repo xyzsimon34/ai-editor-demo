@@ -221,9 +221,6 @@ export default function Editor({ onSaveStatusChange }: EditorProps) {
     const charCount = editor.storage.characterCount.characters()
     setCharacterCount(charCount > 0 ? charCount : undefined)
 
-    window.localStorage.setItem('novel-content', JSON.stringify(editor.getJSON()))
-    window.localStorage.setItem('markdown', editor.storage.markdown.getMarkdown())
-
     setSaveStatus('Saved')
     onSaveStatusChange?.('Saved')
 

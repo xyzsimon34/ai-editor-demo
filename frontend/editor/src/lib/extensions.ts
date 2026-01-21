@@ -22,6 +22,8 @@ import {
 } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 
+import { AIGeneratedNode } from './aiGeneratedNode'
+
 const aiHighlight = AIHighlight
 const placeholder = Placeholder.configure({
   placeholder: ({ node }) => {
@@ -159,7 +161,8 @@ export const getExtensions = () => {
     TextStyle,
     Color,
     CustomKeymap,
-    GlobalDragHandle
+    GlobalDragHandle,
+    AIGeneratedNode
   ]
 }
 
@@ -182,5 +185,6 @@ export const defaultExtensions = [
   TextStyle,
   Color,
   CustomKeymap,
-  GlobalDragHandle
+  GlobalDragHandle,
+  AIGeneratedNode
 ]
