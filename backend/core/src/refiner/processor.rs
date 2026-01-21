@@ -1,3 +1,4 @@
+use crate::llm::llm_model;
 use crate::refiner::types::{RefineInput, RefineOutput};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -37,7 +38,7 @@ pub async fn call_improve_api(input: RefineInput, api_key: &str) -> Result<Refin
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)
         .json(&ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: llm_model::GPT4_O.to_string(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
@@ -75,7 +76,7 @@ pub async fn call_fix_api(input: RefineInput, api_key: &str) -> Result<RefineOut
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)
         .json(&ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: llm_model::GPT4_O.to_string(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
@@ -113,7 +114,7 @@ pub async fn call_longer_api(input: RefineInput, api_key: &str) -> Result<Refine
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)
         .json(&ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: llm_model::GPT4_O.to_string(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
@@ -151,7 +152,7 @@ pub async fn call_shorter_api(input: RefineInput, api_key: &str) -> Result<Refin
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)
         .json(&ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: llm_model::GPT4_O.to_string(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),

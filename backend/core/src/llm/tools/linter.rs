@@ -5,6 +5,8 @@ use tracing::info;
 use yrs::types::xml::{XmlElementRef, XmlFragmentRef};
 use yrs::{Doc, GetString, Transact, Xml, XmlFragment};
 
+use crate::llm::llm_model;
+
 fn xml_fragment_to_string(doc: &Doc, fragment: &XmlFragmentRef) -> String {
     let txn = doc.transact();
     let mut result = String::new();
@@ -302,19 +304,26 @@ pub async fn execute_tool(doc: Arc<Doc>, api_key: &str) -> Result<(String, Arc<D
     // Get original XML string
     let original_xml = xml_fragment_to_string(&doc, &fragment);
 
+    info!("Original XML: {:?}", original_xml);
     let client = reqwest::Client::new();
 
-    let system_content = r#"You are the "Schema Sentry," a specialized linguistic linter for Yjs XmlFragments.
+    let system_content = r#"You are the "Schema Sentry," a specialized linguistic linter for Yjs structures.
 
 Your sole purpose is to:
-1. Fix grammatical errors and spelling mistakes within the text nodes.
-2. Refine vocabulary for better clarity while maintaining the original tone.
-3. Strict Constraint: Do NOT provide any explanations, comments, or markdown code blocks (like ```xml).
-4. Output Format: Return ONLY the complete, corrected XML string. Do NOT change the XML tag names or structure; only improve the text content within them.
-5. If no errors are found, return the original XML string exactly as it is."#;
+1. Identify grammatical errors, spelling mistakes, and areas for clarity improvement.
+2. Mark changes using specific tags:
+   - For text that should be REMOVED, wrap it in <del>original text</del>.
+   - For text that should be ADDED, wrap it in <ins>new text</ins>.
+3. To replace a word/phrase, use the sequence: <del>old</del><ins>new</ins>.
+4. Keep all other original text and XML tag structures untouched.
+5. Strict Constraints: 
+   - Do NOT provide any explanations, comments, or markdown code blocks.
+   - Output ONLY the complete, annotated XML string.
+   - Ensure the content inside <del> matches the original text exactly.
+6. If no errors are found, return the original XML string exactly as it is."#;
 
     let request_payload = json!({
-        "model": "gpt-4o-mini",
+        "model": llm_model::GPT4_O_MINI,
         "messages": [
             {
                 "role": "system",
@@ -355,6 +364,5 @@ Your sole purpose is to:
     info!(
         "XML fragment content replaced, transaction should have committed and triggered observer"
     );
-
     Ok((ai_output, doc))
 }

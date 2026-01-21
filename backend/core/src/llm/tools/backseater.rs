@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::llm::llm_model;
 /// Execute the backseater tool - generates unhelpful comments on user's writing
 /// Uses direct function calling API (single call, no Agent loop)
 pub async fn execute_tool(content: &str, api_key: &str) -> Result<Vec<BackseaterArgs>> {
@@ -15,7 +16,7 @@ pub async fn execute_tool(content: &str, api_key: &str) -> Result<Vec<Backseater
     };
 
     let request_payload = json!({
-        "model": "gpt-4o-mini",
+        "model": llm_model::GPT4_O_MINI,
         "messages": [
             {
                 "role": "system",
@@ -101,7 +102,6 @@ pub async fn execute_tool(content: &str, api_key: &str) -> Result<Vec<Backseater
     Ok(limited_comments)
 }
 
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct BackseaterArgs {
     pub comment_on: String,
@@ -148,14 +148,12 @@ pub struct BackseaterArgs {
 //         )
 // }
 
-
 // #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 // pub struct BackseaterArgs {
 //     pub comment_on: String,
 //     pub comment: String,
 //     pub color_hex: Option<String>,
 // }
-
 
 // pub fn commenter_tool() -> FunctionTool {
 //     FunctionTool {

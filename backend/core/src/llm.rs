@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod llm_model;
 pub mod tools;
 pub mod types;
 

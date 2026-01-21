@@ -6,7 +6,8 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::{IntoResponse, Json},
+    http::header,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use backend_core::llm::new_composer;
@@ -474,74 +475,87 @@ fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, mess
     ));
 }
 
-/// Debug endpoint to get Yjs document as JSON
+/// Debug endpoint to get Yjs document as XML
 async fn debug_yjs_handler(State(state): State<AppState>) -> impl IntoResponse {
     let xml_fragment = state.editor_doc.get_or_insert_xml_fragment("content");
     let txn = state.editor_doc.transact();
 
-    let json_value = yjs_to_json(&xml_fragment, &txn);
+    let xml_string = yjs_to_xml(&xml_fragment, &txn);
 
-    Json(json!({
-        "document": json_value,
-        "fragment_name": "content"
-    }))
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "application/xml")
+        .body(xml_string)
+        .unwrap()
+        .into_response()
 }
 
-/// Convert Yjs XML Fragment to JSON structure
-fn yjs_to_json(fragment: &yrs::types::xml::XmlFragmentRef, txn: &yrs::Transaction) -> Value {
-    let mut children = Vec::new();
+/// Convert Yjs XML Fragment to XML string
+fn yjs_to_xml(fragment: &yrs::types::xml::XmlFragmentRef, txn: &yrs::Transaction) -> String {
+    let mut result = String::new();
     let child_count = fragment.len(txn);
 
     for i in 0..child_count {
         if let Some(child) = fragment.get(txn, i) {
-            children.push(node_to_json(&child, txn));
+            result.push_str(&node_to_xml(&child, txn));
         }
     }
 
-    json!({
-        "type": "fragment",
-        "children": children
-    })
+    result
 }
 
-/// Convert a Yjs XML node to JSON
-fn node_to_json(node: &yrs::types::xml::XmlOut, txn: &yrs::Transaction) -> Value {
+/// Convert a Yjs XML node to XML string
+fn node_to_xml(node: &yrs::types::xml::XmlOut, txn: &yrs::Transaction) -> String {
     match node {
         yrs::types::xml::XmlOut::Text(text_node) => {
+            // Escape XML special characters
             let text = text_node.get_string(txn);
-            json!({
-                "type": "text",
-                "text": text
-            })
+            text.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&apos;")
         }
         yrs::types::xml::XmlOut::Element(element_node) => {
-            let tag = element_node.tag().as_ref().to_string();
-            let mut children = Vec::new();
-            let child_count = element_node.len(txn);
+            let mut result = String::new();
+            let tag = element_node.tag().as_ref();
 
-            // Get attributes
-            let mut attributes = serde_json::Map::new();
+            result.push('<');
+            result.push_str(tag);
+
+            // Add attributes
             let attrs = element_node.attributes(txn);
             for (key, value) in attrs {
-                let key_str: &str = key.as_ref();
+                result.push(' ');
+                result.push_str(key.as_ref());
+                result.push_str("=\"");
+                // Escape attribute values
                 let value_str = value.to_string(txn);
-                attributes.insert(key_str.to_string(), json!(value_str));
+                let escaped_value = value_str
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+                    .replace('"', "&quot;")
+                    .replace('\'', "&apos;");
+                result.push_str(&escaped_value);
+                result.push('"');
             }
 
+            result.push('>');
+
             // Process children
+            let child_count = element_node.len(txn);
             for i in 0..child_count {
                 if let Some(child) = element_node.get(txn, i) {
-                    children.push(node_to_json(&child, txn));
+                    result.push_str(&node_to_xml(&child, txn));
                 }
             }
 
-            json!({
-                "type": "element",
-                "tag": tag,
-                "attributes": attributes,
-                "children": children
-            })
+            result.push_str("</");
+            result.push_str(tag);
+            result.push('>');
+            result
         }
-        yrs::types::xml::XmlOut::Fragment(fragment_node) => yjs_to_json(fragment_node, txn),
+        yrs::types::xml::XmlOut::Fragment(fragment_node) => yjs_to_xml(fragment_node, txn),
     }
 }

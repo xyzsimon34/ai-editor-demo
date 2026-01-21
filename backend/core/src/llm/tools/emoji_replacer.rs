@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::llm::llm_model;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Replacement {
     pub replace: String,
@@ -9,7 +11,7 @@ pub struct Replacement {
 }
 
 /// Execute the emoji replacer tool
-/// 
+///
 /// Takes plain text content and asks AI to suggest word-to-emoji replacements.
 /// Returns a JSON array of Replacement structs.
 pub async fn execute_tool(content: &str, api_key: &str) -> Result<Vec<Replacement>> {
@@ -34,7 +36,7 @@ Return ONLY valid JSON in this format: {"replacements": [{"replace": "word1", "w
     );
 
     let request_payload = json!({
-        "model": "gpt-4o-mini",
+        "model": llm_model::GPT4_O_MINI,
         "messages": [
             {
                 "role": "system",
@@ -72,30 +74,33 @@ Return ONLY valid JSON in this format: {"replacements": [{"replace": "word1", "w
     // Parse the JSON response
     // With json_object format, we expect {"replacements": [...]}
     // But also handle cases where it might return just [...]
-    let parsed: serde_json::Value = serde_json::from_str(content_str)
-        .context("Failed to parse JSON response")?;
-    
-    let replacements: Vec<Replacement> = if let Some(arr) = parsed.get("replacements").and_then(|v| v.as_array()) {
-        // Format: {"replacements": [...]}
-        serde_json::from_value(serde_json::Value::Array(arr.clone()))
-            .context("Failed to parse replacements array from 'replacements' key")?
-    } else if let Some(arr) = parsed.as_array() {
-        // Format: [...] (fallback if AI doesn't follow instructions)
-        serde_json::from_value(serde_json::Value::Array(arr.clone()))
-            .context("Failed to parse replacements as direct array")?
-    } else {
-        // Log the actual response for debugging
-        tracing::warn!("⚠️ Unexpected JSON format: {}", parsed);
-        tracing::warn!("⚠️ Parsed keys: {:?}", parsed.as_object().map(|o| o.keys().collect::<Vec<_>>()));
-        return Err(anyhow::anyhow!(
-            "Expected JSON object with 'replacements' key or array, got: {}",
-            parsed
-        ));
-    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(content_str).context("Failed to parse JSON response")?;
+
+    let replacements: Vec<Replacement> =
+        if let Some(arr) = parsed.get("replacements").and_then(|v| v.as_array()) {
+            // Format: {"replacements": [...]}
+            serde_json::from_value(serde_json::Value::Array(arr.clone()))
+                .context("Failed to parse replacements array from 'replacements' key")?
+        } else if let Some(arr) = parsed.as_array() {
+            // Format: [...] (fallback if AI doesn't follow instructions)
+            serde_json::from_value(serde_json::Value::Array(arr.clone()))
+                .context("Failed to parse replacements as direct array")?
+        } else {
+            // Log the actual response for debugging
+            tracing::warn!("⚠️ Unexpected JSON format: {}", parsed);
+            tracing::warn!(
+                "⚠️ Parsed keys: {:?}",
+                parsed.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
+            return Err(anyhow::anyhow!(
+                "Expected JSON object with 'replacements' key or array, got: {}",
+                parsed
+            ));
+        };
 
     // Limit to 10 replacements max
     let limited_replacements: Vec<Replacement> = replacements.into_iter().take(10).collect();
 
     Ok(limited_replacements)
 }
-

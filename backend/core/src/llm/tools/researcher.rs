@@ -2,6 +2,8 @@ use crate::llm::types::McpTool;
 use anyhow::{Context, Result};
 use serde_json::json;
 
+use crate::llm::llm_model;
+
 pub fn to_tool_definition() -> McpTool {
     McpTool {
         name: "researcher".to_string(),
@@ -24,7 +26,7 @@ pub async fn execute_tool(query: &str, api_key: &str) -> Result<String> {
     let client = reqwest::Client::new();
 
     let request_payload = json!({
-        "model": "gpt-4o",
+        "model": llm_model::GPT4_O,
         "messages": [
             {
                 "role": "system",
