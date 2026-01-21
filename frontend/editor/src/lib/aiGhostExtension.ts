@@ -1,8 +1,9 @@
+import React from 'react'
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { createRoot } from 'react-dom/client'
-import React from 'react'
+
 import Check from '@/components/icons/Check'
 import Close from '@/components/icons/Close'
 
@@ -65,7 +66,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
 
                     if (this.editor) {
                       this.editor.commands.acceptAISuggestion()
-                      this.editor.commands.focus()
+                      this.editor.commands.focus('end')
                     }
                   }
                   const acceptRoot = createRoot(acceptBtn)
@@ -80,7 +81,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
                     e.stopPropagation()
                     if (this.editor) {
                       this.editor.commands.rejectAISuggestion()
-                      this.editor.commands.focus()
+                      this.editor.commands.focus('end')
                     }
                   }
                   const rejectRoot = createRoot(rejectBtn)
@@ -118,12 +119,12 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
     return {
       setAISuggestion:
         (text: string, agentType: 'composer' | 'linter' | 'backseater' = 'composer') =>
-        ({ tr, dispatch, editor }) => {
+        ({ tr, dispatch }) => {
           this.storage.suggestion = text
           this.storage.agentType = agentType
 
           if (dispatch) {
-            const pos = editor.state.selection.to
+            const pos = tr.doc.content.size
             tr.setMeta(pluginKey, { action: 'set', text, pos, agentType })
             dispatch(tr)
           }
@@ -144,10 +145,23 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
 
       acceptAISuggestion:
         () =>
-        ({ commands }) => {
+        ({ commands, tr }) => {
           const suggestion = this.storage.suggestion
           if (suggestion) {
-            commands.insertContent(suggestion)
+            const doc = tr.doc
+            const endPos = doc.content.size
+
+            let textToInsert = suggestion
+            if (doc.childCount > 0) {
+              const lastChild = doc.lastChild
+              if (lastChild && lastChild.type.name === 'paragraph' && lastChild.textContent.trim().length > 0) {
+                textToInsert = ` ${suggestion}`
+              }
+            }
+
+            // Set selection to end, then insert (this appends to last paragraph)
+            commands.setTextSelection(endPos)
+            commands.insertContent(textToInsert)
             commands.clearAISuggestion()
             return true
           }
