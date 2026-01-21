@@ -163,7 +163,7 @@ export const getExtensions = () => {
     Color,
     CustomKeymap,
     GlobalDragHandle,
-    AIGeneratedNode
+    AIGeneratedNode,
     AISuggestion // Mark for AI suggestions - compatible with y-prosemirror
   ]
   
@@ -190,6 +190,6 @@ export const defaultExtensions = [
   Color,
   CustomKeymap,
   GlobalDragHandle,
-  AIGeneratedNode
+  AIGeneratedNode,
   AISuggestion
 ]
