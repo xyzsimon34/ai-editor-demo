@@ -26,13 +26,18 @@ fn get_paragraph_info(doc: &Arc<Doc>, paragraph_index: u32) -> Result<String> {
 
     let txn = doc.transact();
     let mut paragraph_info = String::from("Paragraph structure:\n");
+    paragraph_info.push_str(&format!(
+        "Total text nodes: {} (valid textref_index range: 0 to {})\n",
+        text_refs.len(),
+        text_refs.len().saturating_sub(1)
+    ));
 
     for (idx, text_ref) in text_refs.iter().enumerate() {
         let text_content = text_ref.get_string(&txn);
         let text_length = text_content.len() as u32;
         paragraph_info.push_str(&format!(
-            "  TextNode[{}]: length={}, content=\"{}\"\n",
-            idx, text_length, text_content
+            "  TextNode[{}]: length={}, content=\"{}\" (valid offset range: 0 to {})\n",
+            idx, text_length, text_content, text_length
         ));
     }
 
@@ -61,10 +66,15 @@ pub async fn execute_tool(
     // Step 3: Call AI to analyze paragraph and decide insertion point
     let client = reqwest::Client::new();
 
-    let system_content = "You are a helpful writing assistant. Analyze the paragraph structure and decide where to insert new content. Use the insert_content tool to specify the insertion point and content.".to_string();
+    let system_content = "You are a helpful writing assistant. Analyze the paragraph structure and decide where to insert new content. 
+
+IMPORTANT: When using the insert_content tool:
+- The 'content' parameter MUST be a STRING (text), not a number
+- Provide the actual text content to insert, not just a number or placeholder
+- Ensure all three parameters (textref_index, offset, content) are provided correctly".to_string();
 
     let user_content = format!(
-        "Context/Instruction: {}\n\n{}\n\nFull document content:\n{}\n\nAnalyze the paragraph and decide where to insert content using the insert_content tool.",
+        "Context/Instruction: {}\n\n{}\n\nFull document content:\n{}\n\nAnalyze the paragraph and decide where to insert content using the insert_content tool. Remember: the 'content' parameter must be a string containing the actual text to insert.",
         context, paragraph_info, doc_content
     );
 
@@ -85,21 +95,21 @@ pub async fn execute_tool(
                 "type": "function",
                 "function": {
                     "name": "insert_content",
-                    "description": "Insert content into a paragraph at a specific position.",
+                    "description": "Insert content into a paragraph at a specific position. The content parameter must be a string containing the actual text to insert.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "textref_index": {
                                 "type": "integer",
-                                "description": "The index of the text node (0-based) where to insert"
+                                "description": "The index of the text node (0-based) where to insert. Must be a valid integer within the range shown in the paragraph structure (typically 0 for single text node paragraphs). Check the paragraph structure to see how many text nodes exist."
                             },
                             "offset": {
                                 "type": "integer",
-                                "description": "The character position within that text node (0-based)"
+                                "description": "The character position within that text node (0-based). Must be a valid integer."
                             },
                             "content": {
                                 "type": "string",
-                                "description": "The text content to insert"
+                                "description": "The actual text content to insert. MUST be a string (text), not a number. Example: 'Hello world' or 'For example, this illustrates the point.'"
                             }
                         },
                         "required": ["textref_index", "offset", "content"]
@@ -134,6 +144,12 @@ pub async fn execute_tool(
 
     let result: serde_json::Value = response.json().await?;
 
+    // Debug: Print the full response to understand what AI returned
+    tracing::debug!(
+        "OpenAI API Response: {}",
+        serde_json::to_string_pretty(&result).unwrap_or_default()
+    );
+
     // Step 4: Extract function call arguments directly from tool_calls
     let tool_calls = result["choices"][0]["message"]["tool_calls"]
         .as_array()
@@ -153,9 +169,61 @@ pub async fn execute_tool(
         .and_then(|v| v.as_str())
         .context("No arguments in function call")?;
 
+    // Debug: Print the arguments string before parsing
+    tracing::debug!("Function arguments string: {}", args_str);
+
+    // Fix common AI JSON formatting errors
+    // Sometimes AI returns "content=" instead of "content"
+    let mut fixed_args_str = args_str.replace("\"content=\"", "\"content\"");
+
+    // Try to parse as JSON first to check for type errors
+    let parsed_value: serde_json::Value = serde_json::from_str(&fixed_args_str)
+        .with_context(|| format!("Failed to parse JSON from AI response: {}", fixed_args_str))?;
+
+    // Fix content field if it's not a string
+    if let Some(content_val) = parsed_value.get("content") {
+        if !content_val.is_string() {
+            // If content is a number, convert it to string
+            // Otherwise, try to get a string representation
+            let content_str = if content_val.is_number() {
+                content_val.to_string()
+            } else {
+                content_val
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{}", content_val))
+            };
+
+            // Reconstruct JSON with corrected content field
+            let mut fixed_obj = parsed_value.as_object().cloned().unwrap_or_default();
+            fixed_obj.insert(
+                "content".to_string(),
+                serde_json::Value::String(content_str),
+            );
+            fixed_args_str = serde_json::to_string(&fixed_obj)
+                .with_context(|| "Failed to reconstruct fixed JSON")?;
+        }
+    }
+
     // Parse the decision from function arguments
-    let decision: InsertionDecision = serde_json::from_str(args_str)
-        .context("Failed to parse AI insertion decision from tool call arguments")?;
+    let mut decision: InsertionDecision = serde_json::from_str(&fixed_args_str)
+        .with_context(|| format!("Failed to parse AI insertion decision from tool call arguments. Original: {}, Fixed: {}", args_str, fixed_args_str))?;
+
+    // Step 4.5: Validate and fix textref_index if needed
+    // Re-read text_refs to get current count (in case structure changed)
+    let text_refs = crate::editor::read::get_text_refs_in_paragraph(doc, paragraph_index)
+        .context("Failed to get text refs for validation")?;
+
+    if decision.textref_index >= text_refs.len() {
+        tracing::warn!(
+            "AI returned textref_index {} but paragraph only has {} text nodes. Adjusting to {}",
+            decision.textref_index,
+            text_refs.len(),
+            text_refs.len().saturating_sub(1)
+        );
+        // Adjust to the last valid index
+        decision.textref_index = text_refs.len().saturating_sub(1);
+    }
 
     // Step 5: Insert the AI-generated content at AI-decided position
     crate::editor::insert::insert_ai_content_to_paragraph(
@@ -184,13 +252,35 @@ mod tests {
     use yrs::types::xml::{XmlElementPrelim, XmlOut};
     use yrs::{Transact, XmlFragment, XmlTextPrelim};
 
+    /// 從 .env 文件加載環境變數並獲取 OPENAI_API_KEY
+    ///
+    /// 會嘗試從以下位置加載 .env 文件：
+    /// 1. 項目根目錄的 .env
+    /// 2. backend 目錄的 .env
+    /// 3. 當前目錄的 .env
+    fn get_api_key() -> Option<String> {
+        // 嘗試從不同位置加載 .env 文件
+        // dotenvy::dotenv() 會自動向上查找 .env 文件
+        let _ = dotenvy::dotenv();
+
+        // 如果 dotenv() 失敗，嘗試從常見位置加載
+        if env::var("OPENAI_API_KEY").is_err() {
+            let _ = dotenvy::from_filename("../.env")
+                .or_else(|_| dotenvy::from_filename("../../.env"))
+                .or_else(|_| dotenvy::from_filename(".env"));
+        }
+
+        env::var("OPENAI_API_KEY").ok()
+    }
+
     #[tokio::test]
     async fn test_paragraph_inserter_demo() {
-        // 需要設置 OPENAI_API_KEY 環境變量
-        let api_key = match env::var("OPENAI_API_KEY") {
-            Ok(key) => key,
-            Err(_) => {
+        // 從 .env 文件或環境變數中獲取 OPENAI_API_KEY
+        let api_key = match get_api_key() {
+            Some(key) => key,
+            None => {
                 eprintln!("⚠️  OPENAI_API_KEY not set, skipping test");
+                eprintln!("   Please set OPENAI_API_KEY in .env file or environment variable");
                 return;
             }
         };
@@ -239,10 +329,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_paragraph_inserter_with_custom_paragraph() {
-        let api_key = match env::var("OPENAI_API_KEY") {
-            Ok(key) => key,
-            Err(_) => {
+        // 從 .env 文件或環境變數中獲取 OPENAI_API_KEY
+        let api_key = match get_api_key() {
+            Some(key) => key,
+            None => {
                 eprintln!("⚠️  OPENAI_API_KEY not set, skipping test");
+                eprintln!("   Please set OPENAI_API_KEY in .env file or environment variable");
                 return;
             }
         };
