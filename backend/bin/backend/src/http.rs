@@ -139,7 +139,7 @@ pub async fn start_http(
                     })
                     .to_string(),
                 ));
-                match backend_core::llm::new_linter(&api_key_for_task, doc_for_task.clone()).await {
+                match backend_core::llm::run_linter(&api_key_for_task, doc_for_task.clone()).await {
                     Ok(_) => {
                         tracing::info!("✅ AI check successful");
                         let _ = broadcast_tx_for_task.send(MessageStructure::AiCommand(
@@ -175,7 +175,7 @@ pub async fn start_http(
                     })
                     .to_string(),
                 ));
-                match backend_core::llm::new_emoji_replacer(&api_key_for_task, &doc_for_task).await
+                match backend_core::llm::run_emoji_replacer(&api_key_for_task, &doc_for_task).await
                 {
                     Ok(_) => {
                         tracing::info!("✅ AI emoji replacer successful");
@@ -212,7 +212,7 @@ pub async fn start_http(
                     })
                     .to_string(),
                 ));
-                match backend_core::llm::new_backseating_agent(&api_key_for_task, &doc_for_task)
+                match backend_core::llm::run_backseating(&api_key_for_task, &doc_for_task)
                     .await
                 {
                     Ok(comments) => {
