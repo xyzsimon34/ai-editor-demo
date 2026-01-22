@@ -22,12 +22,14 @@ pub async fn new_composer(
     // let words = crate::editor::format_word_stream(&result);
     // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
     // Generate a unique run ID for this AI generation
-    let run_id = format!("extender-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis());
+    let run_id = format!(
+        "extender-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
     crate::editor::append_ai_content_to_doc(doc, &result, Some("extender"), Some(&run_id))?;
-
 
     if preview_mode {
         return Ok(Some(result));
@@ -55,7 +57,7 @@ pub async fn new_composer(
 }
 
 pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
-    let (_result, _updated_doc) = linter::execute_tool(doc, api_key).await?;
+    let _ = linter::execute_tool(doc, api_key).await?;
     Ok(())
 }
 

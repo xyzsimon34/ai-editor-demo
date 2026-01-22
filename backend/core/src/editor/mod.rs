@@ -1,3 +1,4 @@
+pub mod presence;
 pub mod read;
 pub mod write;
 

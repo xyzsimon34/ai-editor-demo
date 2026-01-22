@@ -1,25 +1,50 @@
 use anyhow::Result;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::{Arc, atomic::AtomicU64};
+
+use crate::editor::presence::is_user_writing;
 
 use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
 use yrs::{
     Doc, GetString, Text, Transact, TransactionMut, Xml, XmlElementPrelim, XmlElementRef,
-    XmlFragment, XmlOut, XmlTextPrelim,
+    XmlFragment, XmlOut, XmlTextPrelim, XmlTextRef,
 };
 
-fn is_user_writing(last_used_at: &Arc<AtomicU64>, timeout_ms: u64) -> bool {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_millis() as u64;
-    let last_used = last_used_at.load(Ordering::Relaxed);
-
-    (now - last_used) < timeout_ms
+pub fn get_element(doc: &Doc, field_name: &str) -> Result<XmlElementRef> {
+    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
+    let txn = doc.transact();
+    let Some(elem) = xml_fragment.get(&txn, 0) else {
+        return Err(anyhow::anyhow!("Failed to get element from fragment"));
+    };
+    match elem {
+        XmlOut::Element(elem) => Ok(elem),
+        XmlOut::Text(_) => Err(anyhow::anyhow!("Element is not an element")),
+        XmlOut::Fragment(_) => Err(anyhow::anyhow!("Element is not an element")),
+    }
 }
+
+pub fn create_text_node(
+    parent: &XmlElementRef,
+    txn: &mut TransactionMut<'_>,
+    content: &str,
+) -> Result<XmlTextRef> {
+    let text_ref = parent.insert(txn, 0, XmlTextPrelim::new(""));
+
+    text_ref.insert(txn, 0, content);
+
+    Ok(text_ref)
+}
+
+pub fn clear_element_content(element: &XmlElementRef, txn: &mut TransactionMut<'_>) -> Result<()> {
+    let len = element.len(txn);
+    if len == 0 {
+        return Ok(());
+    }
+
+    element.remove_range(txn, 0, len);
+
+    Ok(())
+}
+
 // ============================================================================
 // Word Preparation
 // ============================================================================
@@ -89,7 +114,7 @@ pub fn is_field_populated(doc: &Arc<Doc>, field_name: &str) -> bool {
 /// // ... 用戶先創建內容結構 ...
 /// append_ai_content_to_doc(&doc, "AI generated text", Some("extender"), Some("run-123"))?;
 /// ```
-/// 
+///
 pub fn append_ai_content_to_doc_as_elements(doc: &Arc<Doc>, content: &str) -> Result<()> {
     if content.trim().is_empty() {
         return Ok(()); // 空內容不處理
@@ -150,7 +175,6 @@ pub fn append_ai_content_to_doc_as_elements(doc: &Arc<Doc>, content: &str) -> Re
     Ok(())
 }
 
-
 // MARKS WORKFLOW
 pub fn append_ai_content_to_doc(
     doc: &Arc<Doc>,
@@ -158,18 +182,26 @@ pub fn append_ai_content_to_doc(
     tool_name: Option<&str>,
     run_id: Option<&str>,
 ) -> Result<()> {
-    if content.trim().is_empty() { return Ok(()); }
+    if content.trim().is_empty() {
+        return Ok(());
+    }
 
     let xml_fragment = doc.get_or_insert_xml_fragment("content");
     let mut txn = doc.transact_mut();
 
     let len = xml_fragment.len(&txn);
-    if len == 0 { return Err(anyhow::anyhow!("No content")); }
+    if len == 0 {
+        return Err(anyhow::anyhow!("No content"));
+    }
 
     // Get the last paragraph
-    let Some(last_elem) = xml_fragment.get(&txn, len - 1) else { return Ok(()); };
-    let yrs::types::xml::XmlOut::Element(para) = last_elem else { return Ok(()); };
-    
+    let Some(last_elem) = xml_fragment.get(&txn, len - 1) else {
+        return Ok(());
+    };
+    let yrs::types::xml::XmlOut::Element(para) = last_elem else {
+        return Ok(());
+    };
+
     // Position to insert new node
     let insert_pos = para.len(&txn);
 
@@ -186,20 +218,18 @@ pub fn append_ai_content_to_doc(
 
     // 2. Create the Root Map (Outer - matches Mark name) - uses Arc<str> keys for insert_with_attributes
     let mut text_attrs = std::collections::HashMap::<Arc<str>, yrs::Any>::new();
-    text_attrs.insert(Arc::from("aisuggestion"), yrs::Any::Map(Arc::new(mark_attrs)));
-    
+    text_attrs.insert(
+        Arc::from("aisuggestion"),
+        yrs::Any::Map(Arc::new(mark_attrs)),
+    );
+
     // 3. Create a new XmlText node and insert it into the paragraph
     // We start it empty ("") because we need the reference to it first
     let text_node = para.insert(&mut txn, insert_pos, yrs::XmlTextPrelim::new(""));
 
     // 4. Insert the content WITH attributes into the text node
-    text_node.insert_with_attributes(
-        &mut txn, 
-        0, 
-        content, 
-        text_attrs
-    );
-    
+    text_node.insert_with_attributes(&mut txn, 0, content, text_attrs);
+
     tracing::info!("Inserted text with Mark attributes at pos {}", insert_pos);
     Ok(())
 }
@@ -399,8 +429,74 @@ pub fn push_element(
 }
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::atomic::Ordering,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use super::*;
-    use yrs::{XmlOut, XmlTextPrelim};
+    use yrs::{XmlOut, XmlTextPrelim, XmlTextRef};
+
+    #[test]
+    fn test_create_text_node() {
+        let src = "Hello, world!";
+        let target = "Hello, world!";
+
+        let doc = Doc::new();
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        let elem = {
+            let mut txn = doc.transact_mut();
+            let elem = fragment.insert(&mut txn, 0, XmlElementPrelim::empty("test"));
+
+            create_text_node(&elem, &mut txn, src).expect("Insert failed");
+
+            elem
+        };
+
+        let txn = doc.transact();
+
+        let node = elem.get(&txn, 0).expect("node should exist");
+
+        let text_ref: XmlTextRef = node.into_xml_text().unwrap();
+        assert_eq!(text_ref.get_string(&txn), target);
+    }
+
+    #[test]
+    fn test_create_multiple_text_nodes() {
+        let src: Vec<&str> = vec!["text1", "text2", "text3"];
+
+        let target: Vec<&str> = vec!["text3", "text2", "text1"];
+
+        let doc = Arc::new(Doc::new());
+
+        let fragment = doc.get_or_insert_xml_fragment("content");
+        let elem = {
+            let mut txn = doc.transact_mut();
+            let elem = fragment.insert(&mut txn, 0, XmlElementPrelim::empty("test"));
+
+            for text in src {
+                create_text_node(&elem, &mut txn, text).expect("Insert failed");
+            }
+
+            elem
+        };
+
+        let txn = doc.transact();
+        let len = elem.len(&txn);
+        assert_eq!(len, 3, "should have 3 text nodes");
+
+        // let expected_contents = vec!["text3", "text2", "text1"];
+
+        for (i, expected) in target.into_iter().enumerate() {
+            let node = elem.get(&txn, i as u32).expect("node should exist");
+
+            let text_ref: XmlTextRef = node.into_xml_text().unwrap();
+            assert_eq!(text_ref.get_string(&txn), expected);
+        }
+
+        assert_eq!(elem.get_string(&txn), "<test>text3text2text1</test>");
+    }
 
     #[test]
     fn test_append_ai_content_to_empty_doc() {
@@ -413,6 +509,31 @@ mod tests {
                 .to_string()
                 .contains("Document has no content structure")
         );
+    }
+
+    #[test]
+    fn test_clear_element_content() {
+        let doc = Arc::new(Doc::new());
+        let fragment = doc.get_or_insert_xml_fragment("content");
+
+        let elem = {
+            let mut txn = doc.transact_mut();
+            let elem = fragment.insert(&mut txn, 0, XmlElementPrelim::empty("test"));
+            create_text_node(&elem, &mut txn, "text1").expect("Insert failed");
+            create_text_node(&elem, &mut txn, "text2").expect("Insert failed");
+            create_text_node(&elem, &mut txn, "text3").expect("Insert failed");
+            elem
+        };
+
+        let mut txn = doc.transact_mut();
+        let len = elem.len(&txn);
+        assert_eq!(len, 3);
+        clear_element_content(&elem, &mut txn).expect("Clear failed");
+
+        let len = elem.len(&txn);
+        assert_eq!(len, 0);
+
+        assert_eq!(elem.get_string(&txn), "<test></test>");
     }
 
     #[test]
