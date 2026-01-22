@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::sync::Arc;
 use yrs::types::xml::XmlElementRef;
 use yrs::{Doc, GetString, ReadTxn, Transact, XmlFragment, Xml};
@@ -46,6 +47,104 @@ pub fn get_doc_content(doc: &Arc<Doc>) -> String {
     let xml_fragment = doc.get_or_insert_xml_fragment("content");
     let txn = doc.transact();
     extract_text_from_fragment(&xml_fragment, &txn)
+}
+
+pub fn get_text_refs_in_paragraph(
+    doc: &Arc<Doc>,
+    paragraph_index: u32,
+) -> Result<Vec<yrs::XmlTextRef>> {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let txn = doc.transact();
+
+    let Some(child) = xml_fragment.get(&txn, paragraph_index) else {
+        return Err(anyhow::anyhow!("No element at index {}", paragraph_index));
+    };
+
+    let yrs::types::xml::XmlOut::Element(para) = child else {
+        return Err(anyhow::anyhow!(
+            "Element at index {} is not a Element",
+            paragraph_index
+        ));
+    };
+
+    if para.tag().as_ref() != "paragraph" {
+        return Err(anyhow::anyhow!(
+            "Element at index {} is not a paragraph (tag: {})",
+            paragraph_index,
+            para.tag().as_ref()
+        ));
+    }
+
+    let mut text_refs = Vec::new();
+    collect_text_nodes_from_elem(&txn, &para, &mut text_refs);
+    Ok(text_refs)
+}
+
+pub fn get_doc_xml_structure(doc: &Arc<Doc>) -> yrs::types::xml::XmlOut {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    yrs::types::xml::XmlOut::Fragment(xml_fragment)
+}
+
+/// Debug 整個 doc 的結構
+///
+/// 返回一個可以用於 debug 打印的字符串表示
+pub fn debug_doc_structure(doc: &Arc<Doc>) -> String {
+    let xml_fragment = doc.get_or_insert_xml_fragment("content");
+    let txn = doc.transact();
+    let len = xml_fragment.len(&txn);
+
+    let mut result = String::from("Doc structure:\n");
+    result.push_str(&format!("Fragment length: {}\n", len));
+
+    for i in 0..len {
+        if let Some(child) = xml_fragment.get(&txn, i) {
+            result.push_str(&format!("  [{}]: ", i));
+            match &child {
+                yrs::types::xml::XmlOut::Text(text_node) => {
+                    let text = text_node.get_string(&txn);
+                    result.push_str(&format!("Text({} chars): \"{}\"\n", text.len(), text));
+                }
+                yrs::types::xml::XmlOut::Element(elem) => {
+                    let tag = elem.tag().as_ref();
+                    let child_count = elem.len(&txn);
+                    result.push_str(&format!("Element<{}> ({} children)\n", tag, child_count));
+
+                    // 遞迴打印子節點
+                    for j in 0..child_count {
+                        if let Some(child) = elem.get(&txn, j) {
+                            match &child {
+                                yrs::types::xml::XmlOut::Text(text_node) => {
+                                    let text = text_node.get_string(&txn);
+                                    result.push_str(&format!(
+                                        "    [{}]: Text({} chars): \"{}\"\n",
+                                        j,
+                                        text.len(),
+                                        text
+                                    ));
+                                }
+                                yrs::types::xml::XmlOut::Element(child_elem) => {
+                                    let child_tag = child_elem.tag().as_ref();
+                                    let grandchild_count = child_elem.len(&txn);
+                                    result.push_str(&format!(
+                                        "    [{}]: Element<{}> ({} children)\n",
+                                        j, child_tag, grandchild_count
+                                    ));
+                                }
+                                _ => {
+                                    result.push_str(&format!("    [{}]: Other\n", j));
+                                }
+                            }
+                        }
+                    }
+                }
+                yrs::types::xml::XmlOut::Fragment(_) => {
+                    result.push_str("Fragment\n");
+                }
+            }
+        }
+    }
+
+    result
 }
 
 // ============================================================================
@@ -200,6 +299,35 @@ fn is_block_level_element(tag_name: &str) -> bool {
 /// 換行元素（如 hard_break、br）本身代表換行，需要直接添加換行符。
 fn is_break_element(tag_name: &str) -> bool {
     BREAK_ELEMENTS.contains(&tag_name)
+}
+
+// ============================================================================
+// Text Node Collection Helpers
+// ============================================================================
+
+/// Helper: Recursively find all XmlTextRef nodes in an element
+/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
+pub fn collect_text_nodes_from_elem(
+    txn: &impl yrs::ReadTxn,
+    elem: &yrs::XmlElementRef,
+    collector: &mut Vec<yrs::XmlTextRef>,
+) {
+    use yrs::types::xml::XmlOut;
+
+    let len = elem.len(txn);
+    for i in 0..len {
+        if let Some(child) = elem.get(txn, i) {
+            match child {
+                XmlOut::Element(child_elem) => {
+                    collect_text_nodes_from_elem(txn, &child_elem, collector);
+                }
+                XmlOut::Text(text_ref) => {
+                    collector.push(text_ref);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 // ============================================================================

@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::get,
 };
-use backend_core::llm::new_composer;
+use backend_core::llm::run_composer;
 use backend_core::refiner::processor::{
     call_fix_api, call_improve_api, call_longer_api, call_shorter_api,
 };
@@ -295,7 +295,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             let user_last_used_at =
                                                 state_for_task.user_last_used_at.clone();
 
-                                            match new_composer(
+                                            match run_composer(
                                                 api_key,
                                                 &role,
                                                 &state_for_task.editor_doc,
@@ -361,6 +361,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
+<<<<<<< HEAD
                                             // The agent modifies the doc directly via new_composer
                                             tracing::info!("✅ Applied AI changes via CRDT");
                                             delegate_to_frontend(
@@ -369,6 +370,26 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 "complete",
                                                 &output,
                                             );
+=======
+                                            if let Some(text) = output {
+                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
+                                                delegate_to_frontend(
+                                                    &state_for_task,
+                                                    "AI_SUGGESTION",
+                                                    "complete",
+                                                    &text,
+                                                );
+                                            } else {
+                                                // The agent modifies the doc directly via run_composer
+                                                tracing::info!("✅ Applied AI changes via CRDT");
+                                                delegate_to_frontend(
+                                                    &state_for_task,
+                                                    "AI_STATUS",
+                                                    "complete",
+                                                    "AI agent finished successfully",
+                                                );
+                                            }
+>>>>>>> jordan
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();

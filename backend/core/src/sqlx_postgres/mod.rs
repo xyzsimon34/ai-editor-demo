@@ -6,6 +6,8 @@ pub use sqlx::{
     postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgQueryResult},
 };
 
+// sqlx::migrate!() 會從 crate 根目錄查找 migrations 目錄
+// migrations 目錄位於 backend/core/migrations
 static EMBEDDED_MIGRATE: Migrator = sqlx::migrate!();
 
 pub async fn connect_pg(

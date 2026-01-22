@@ -1,9 +1,11 @@
 use crate::llm::tools::extender;
 use crate::llm::tools::linter;
+use crate::llm::tools::paragraph_inserter;
 use anyhow::Result;
 use std::sync::{Arc, atomic::AtomicU64};
 use yrs::{Doc, Transact, XmlFragment};
-pub async fn new_composer(
+
+pub async fn run_composer(
     api_key: &str,
     role: &str,
     doc: &Arc<Doc>,
@@ -54,12 +56,12 @@ pub async fn new_composer(
     Ok(None)
 }
 
-pub async fn new_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
+pub async fn run_linter(api_key: &str, doc: Arc<Doc>) -> Result<()> {
     let (_result, _updated_doc) = linter::execute_tool(doc, api_key).await?;
     Ok(())
 }
 
-pub async fn new_backseating_agent(
+pub async fn run_backseating(
     api_key: &str,
     doc: &Arc<Doc>,
 ) -> Result<Vec<crate::llm::tools::backseater::BackseaterArgs>> {
@@ -83,7 +85,7 @@ pub async fn new_backseating_agent(
     Ok(comments)
 }
 
-pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
+pub async fn run_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
     // Extract plain text from document
     let content = crate::editor::get_doc_content(doc);
     if content.trim().is_empty() {
@@ -113,5 +115,31 @@ pub async fn new_emoji_replacer(api_key: &str, doc: &Arc<Doc>) -> Result<()> {
         "✅ Successfully applied {} emoji replacements",
         replacements.len()
     );
+    Ok(())
+}
+
+/// Insert AI content to a paragraph
+///
+/// # Arguments
+/// * `api_key` - OpenAI API key
+/// * `doc` - Yjs document
+/// * `paragraph_index` - Optional paragraph index (default: 0)
+/// * `context` - Optional context/instruction for AI (default: document content)
+pub async fn run_paragraph_inserter(
+    api_key: &str,
+    doc: &Arc<Doc>,
+    paragraph_index: Option<u32>,
+    context: Option<String>,
+) -> Result<()> {
+    let doc_content = crate::editor::get_doc_content(doc);
+    if doc_content.trim().is_empty() {
+        tracing::info!("⚠️ Content is empty, skipping paragraph inserter");
+        return Ok(());
+    }
+
+    let para_index = paragraph_index.unwrap_or(0);
+    let context_str = context.unwrap_or_else(|| doc_content.clone());
+
+    paragraph_inserter::execute_tool(doc, para_index, &context_str, api_key).await?;
     Ok(())
 }
