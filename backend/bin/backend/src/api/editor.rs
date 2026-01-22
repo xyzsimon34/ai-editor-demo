@@ -49,20 +49,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         return;
     }
 
-    let linter_enabled = crate::http::LINTER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
-    let emoji_replacer_enabled = crate::http::EMOJI_REPLACER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
-    let backseater_enabled = crate::http::BACKSEATER_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+    let linter_enabled = state
+        .linter_enabled
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let emoji_replacer_enabled = state
+        .emoji_replacer_enabled
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let backseater_enabled = state
+        .backseater_enabled
+        .load(std::sync::atomic::Ordering::Relaxed);
 
-    let _ = sender.send(Message::Text(
-        serde_json::json!({
-            "type": "AI_STATUS",
-            "status": "complete",
-            "message": format!("Linter {}", if linter_enabled { "enabled" } else { "disabled" })
-        })
-        .to_string()
-        .into(),
-    )).await;
-    
+    let _ = sender
+        .send(Message::Text(
+            serde_json::json!({
+                "type": "AI_STATUS",
+                "status": "complete",
+                "message": format!("Linter {}", if linter_enabled { "enabled" } else { "disabled" })
+            })
+            .to_string()
+            .into(),
+        ))
+        .await;
+
     let _ = sender.send(Message::Text(
         serde_json::json!({
             "type": "AI_STATUS",
@@ -72,7 +80,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         .to_string()
         .into(),
     )).await;
-    
+
     let _ = sender.send(Message::Text(
         serde_json::json!({
             "type": "AI_STATUS",
@@ -132,21 +140,20 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         let state_for_task = state.clone();
                         let cmd_action = cmd.action.clone();
                         let cmd_payload = cmd.payload.clone();
-                        
+
                         if cmd_action != "TOGGLE" {
-                            let _ =
-                                state_for_task
-                                    .editor_broadcast_tx
-                                    .send(MessageStructure::AiCommand(
-                                        serde_json::json!({
-                                            "type": "AI_STATUS",
-                                            "status": "thinking",
-                                            "message": "Polishing your text..."
-                                        })
-                                        .to_string(),
-                                    ));
+                            let _ = state_for_task.editor_broadcast_tx.send(
+                                MessageStructure::AiCommand(
+                                    serde_json::json!({
+                                        "type": "AI_STATUS",
+                                        "status": "thinking",
+                                        "message": "Polishing your text..."
+                                    })
+                                    .to_string(),
+                                ),
+                            );
                         }
-                        
+
                         tokio::spawn(async move {
                             match cmd_action.as_str() {
                                 "IMPROVE" | "FIX" | "LONGER" | "SHORTER" => {
@@ -294,7 +301,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 &state_for_task.editor_doc,
                                                 user_last_used_at,
                                                 state_for_task.user_writing_timeout_ms,
-                                                preview_mode
+                                                preview_mode,
                                             )
                                             .await
                                             {
@@ -302,22 +309,32 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                     // Manually encode and broadcast the update to ensure it's sent
                                                     // (Observer might not trigger reliably in async context)
                                                     let update = {
-                                                        let txn = state_for_task.editor_doc.transact();
-                                                        txn.encode_state_as_update_v1(&yrs::StateVector::default())
+                                                        let txn =
+                                                            state_for_task.editor_doc.transact();
+                                                        txn.encode_state_as_update_v1(
+                                                            &yrs::StateVector::default(),
+                                                        )
                                                     };
-                                                    
+
                                                     if let Err(e) = state_for_task
                                                         .editor_broadcast_tx
-                                                        .send(MessageStructure::YjsUpdate(update.to_vec()))
+                                                        .send(MessageStructure::YjsUpdate(
+                                                            update.to_vec(),
+                                                        ))
                                                     {
-                                                        tracing::warn!("Failed to manually broadcast agent update: {:?}", e);
+                                                        tracing::warn!(
+                                                            "Failed to manually broadcast agent update: {:?}",
+                                                            e
+                                                        );
                                                     } else {
                                                         tracing::info!(
                                                             "✅ Manually broadcasted agent update to {} subscribers",
-                                                            state_for_task.editor_broadcast_tx.receiver_count()
+                                                            state_for_task
+                                                                .editor_broadcast_tx
+                                                                .receiver_count()
                                                         );
                                                     }
-                                                    
+
                                                     Ok("Agent executed successfully".to_string())
                                                 }
                                                 Err(e) => {
@@ -452,9 +469,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         }
                                         "BACKSEATER" => {
                                             tracing::info!("💬 toggling backseater...");
-                                            let current = crate::http::BACKSEATER_FLAG
+                                            let current = state_for_task
+                                                .backseater_enabled
                                                 .load(std::sync::atomic::Ordering::Relaxed);
-                                            crate::http::BACKSEATER_FLAG.store(
+                                            state_for_task.backseater_enabled.store(
                                                 !current,
                                                 std::sync::atomic::Ordering::Relaxed,
                                             );
@@ -505,8 +523,11 @@ fn delegate_to_frontend(state: &AppState, command_type: &str, status: &str, mess
         "message": message
     })
     .to_string();
-    
-    match state.editor_broadcast_tx.send(MessageStructure::AiCommand(json_msg.clone())) {
+
+    match state
+        .editor_broadcast_tx
+        .send(MessageStructure::AiCommand(json_msg.clone()))
+    {
         Ok(_) => {
             tracing::info!(
                 "✅ Broadcasted {} message to {} subscribers: status={}, message={}",

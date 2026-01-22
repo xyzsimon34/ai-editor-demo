@@ -137,19 +137,19 @@ function findPendingAISuggestion(doc: ProseMirrorNode): { from: number; to: numb
   doc.descendants((node: ProseMirrorNode, pos: number) => {
     if (node.isText) {
       const aiMark = node.marks?.find((mark: Mark) => mark.type.name === 'aisuggestion')
-      
+
       if (aiMark) {
         const status = aiMark.attrs?.status
         if (status === 'pending') {
           const tool = aiMark.attrs?.tool
           const currentAgentType = mapToolToAgentType(tool)
-          
+
           if (!inMarkedRegion) {
             startPos = pos
             agentType = currentAgentType
             inMarkedRegion = true
           }
-          
+
           textParts.push(node.textContent)
           endPos = pos + node.textContent.length
         } else {
@@ -194,7 +194,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
 
   addProseMirrorPlugins() {
     const extension = this
-    
+
     return [
       new Plugin({
         key: pluginKey,
@@ -204,7 +204,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
           },
           apply: (tr, decorationSet, oldState, newState) => {
             const meta = tr.getMeta(pluginKey)
-            
+
             if (meta?.action === 'clear') {
               return DecorationSet.empty
             }
@@ -220,7 +220,7 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
             }
 
             const markedSuggestion = findPendingAISuggestion(newState.doc)
-            
+
             if (extension.editor) {
               extension.editor.storage.aiGhost.markedSuggestion = markedSuggestion
             }
@@ -231,24 +231,24 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
             }
 
             decorationSet = decorationSet.map(tr.mapping, tr.doc)
-            
+
             return decorationSet
           }
         },
         props: {
           decorations(state) {
             const pluginState = this.getState(state)
-            
+
             if (pluginState && pluginState.find().length > 0) {
               return pluginState
             }
-            
+
             const markedSuggestion = findPendingAISuggestion(state.doc)
             if (markedSuggestion) {
               const decorations = createMarkedSuggestionDecorations(markedSuggestion, extension)
               return DecorationSet.create(state.doc, decorations)
             }
-            
+
             return pluginState
           }
         }
@@ -260,90 +260,90 @@ export const AIGhostExtension = Extension.create<never, AIGhostStorage>({
     return {
       setAISuggestion:
         (text: string, agentType: AgentType = 'composer') =>
-        ({ tr, dispatch }) => {
-          this.storage.suggestion = text
-          this.storage.agentType = agentType
+          ({ tr, dispatch }) => {
+            this.storage.suggestion = text
+            this.storage.agentType = agentType
 
-          if (dispatch) {
-            const pos = tr.doc.content.size
-            tr.setMeta(pluginKey, { action: 'set', text, pos, agentType })
-            dispatch(tr)
-          }
-          return true
-        },
+            if (dispatch) {
+              const pos = tr.doc.content.size
+              tr.setMeta(pluginKey, { action: 'set', text, pos, agentType })
+              dispatch(tr)
+            }
+            return true
+          },
 
       clearAISuggestion:
         () =>
-        ({ tr, dispatch }) => {
-          this.storage.suggestion = null
-          this.storage.agentType = null
-          if (dispatch) {
-            tr.setMeta(pluginKey, { action: 'clear' })
-            dispatch(tr)
-          }
-          return true
-        },
+          ({ tr, dispatch }) => {
+            this.storage.suggestion = null
+            this.storage.agentType = null
+            if (dispatch) {
+              tr.setMeta(pluginKey, { action: 'clear' })
+              dispatch(tr)
+            }
+            return true
+          },
 
       acceptAISuggestion:
         () =>
-        ({ commands, tr, state, dispatch }) => {
-          const markedSuggestion = this.storage.markedSuggestion
-          if (markedSuggestion) {
-            const { from, to } = markedSuggestion
-            const markType = state.schema.marks.aisuggestion
-            
-            if (markType && dispatch) {
-              tr.removeMark(from, to, markType)
-              this.storage.markedSuggestion = null
-              tr.setMeta(pluginKey, { action: 'clear' })
-              dispatch(tr)
-              commands.setTextSelection(to)
-              return true
-            }
-          }
+          ({ commands, tr, state, dispatch }) => {
+            const markedSuggestion = this.storage.markedSuggestion
+            if (markedSuggestion) {
+              const { from, to } = markedSuggestion
+              const markType = state.schema.marks.aisuggestion
 
-          const suggestion = this.storage.suggestion
-          if (suggestion) {
-            const doc = tr.doc
-            const endPos = doc.content.size
-
-            let textToInsert = suggestion
-            if (doc.childCount > 0) {
-              const lastChild = doc.lastChild
-              if (lastChild && lastChild.type.name === 'paragraph' && lastChild.textContent.trim().length > 0) {
-                textToInsert = ` ${suggestion}`
+              if (markType && dispatch) {
+                tr.removeMark(from, to, markType)
+                this.storage.markedSuggestion = null
+                tr.setMeta(pluginKey, { action: 'clear' })
+                dispatch(tr)
+                commands.setTextSelection(to)
+                return true
               }
             }
 
-            commands.setTextSelection(endPos)
-            commands.insertContent(textToInsert)
-            commands.clearAISuggestion()
-            return true
-          }
-          return false
-        },
+            const suggestion = this.storage.suggestion
+            if (suggestion) {
+              const doc = tr.doc
+              const endPos = doc.content.size
+
+              let textToInsert = suggestion
+              if (doc.childCount > 0) {
+                const lastChild = doc.lastChild
+                if (lastChild && lastChild.type.name === 'paragraph' && lastChild.textContent.trim().length > 0) {
+                  textToInsert = ` ${suggestion}`
+                }
+              }
+
+              commands.setTextSelection(endPos)
+              commands.insertContent(textToInsert)
+              commands.clearAISuggestion()
+              return true
+            }
+            return false
+          },
 
       rejectAISuggestion:
         () =>
-        ({ commands, tr, dispatch }) => {
-          const markedSuggestion = this.storage.markedSuggestion
-          if (markedSuggestion) {
-            const { from, to } = markedSuggestion
-            if (dispatch) {
-              tr.delete(from, to)
-              this.storage.markedSuggestion = null
-              tr.setMeta(pluginKey, { action: 'clear' })
-              dispatch(tr)
+          ({ commands, tr, dispatch }) => {
+            const markedSuggestion = this.storage.markedSuggestion
+            if (markedSuggestion) {
+              const { from, to } = markedSuggestion
+              if (dispatch) {
+                tr.delete(from, to)
+                this.storage.markedSuggestion = null
+                tr.setMeta(pluginKey, { action: 'clear' })
+                dispatch(tr)
+                return true
+              }
+            }
+
+            if (this.storage.suggestion) {
+              commands.clearAISuggestion()
               return true
             }
+            return false
           }
-
-          if (this.storage.suggestion) {
-            commands.clearAISuggestion()
-            return true
-          }
-          return false
-        }
     }
   },
 
