@@ -54,20 +54,38 @@ fn xml_node_to_string(node: &yrs::types::xml::XmlOut, txn: &impl yrs::ReadTxn) -
     }
 }
 
-fn replace_xml_fragment_content(doc: &Doc, fragment: &XmlFragmentRef, new_xml: &str) -> Result<()> {
+fn replace_xml_fragment_content(
+    doc: &Doc,
+    fragment: &XmlFragmentRef,
+    new_xml: &str,
+    run_id: &str,
+) -> Result<()> {
     let mut txn = doc.transact_mut();
 
-    // Clear existing content
-    let len = fragment.len(&txn);
-    if len > 0 {
-        fragment.remove_range(&mut txn, 0, len);
-    }
+    // Get the first element from fragment
+    if let Some(first_child) = fragment.get(&txn, 0) {
+        if let yrs::types::xml::XmlOut::Element(elem) = first_child {
+            // Clear existing content of the first element
+            let len = elem.len(&txn);
+            if len > 0 {
+                elem.remove_range(&mut txn, 0, len);
+            }
 
-    // Parse and insert new XML
-    // For simplicity, we'll use a basic XML parser approach
-    // In production, you'd want to use a proper XML parser
-    let parsed = parse_xml_string(new_xml)?;
-    insert_xml_prelim(&mut txn, fragment, &parsed);
+            // Parse and insert new XML as text nodes
+            let parsed = parse_xml_string(new_xml, run_id)?;
+            for prelim in &parsed {
+                match prelim {
+                    XmlPrelim::Text(text) => {
+                        let len = elem.len(&txn);
+                        elem.insert(&mut txn, len, yrs::XmlTextPrelim::new(text));
+                    }
+                    XmlPrelim::Element { .. } => {
+                        // Skip elements, only insert text
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -82,30 +100,138 @@ enum XmlPrelim {
     Text(String),
 }
 
-fn parse_xml_string(xml: &str) -> Result<Vec<XmlPrelim>> {
-    // Simple XML parser - handles basic cases
-    // This is a simplified version, for production use a proper XML parser
+fn parse_xml_string(xml: &str, run_id: &str) -> Result<Vec<XmlPrelim>> {
     let mut result = Vec::new();
     let mut chars = xml.chars().peekable();
+    let mut current_text = String::new();
 
     while chars.peek().is_some() {
-        skip_whitespace(&mut chars);
-        if chars.peek().is_none() {
-            break;
+        if *chars.peek().unwrap() == '<' {
+            // If we have accumulated text, save it
+            if !current_text.is_empty() {
+                result.push(XmlPrelim::Text(current_text.clone()));
+                current_text.clear();
+            }
+
+            // Parse the entire tag as text (including opening tag, content, and closing tag)
+            let tag_text = parse_tag_as_text(&mut chars, run_id);
+            if !tag_text.is_empty() {
+                result.push(XmlPrelim::Text(tag_text));
+            }
+        } else {
+            current_text.push(chars.next().unwrap());
+        }
+    }
+
+    // Add any remaining text
+    if !current_text.is_empty() {
+        result.push(XmlPrelim::Text(current_text));
+    }
+
+    Ok(result)
+}
+
+fn parse_tag_as_text(chars: &mut std::iter::Peekable<std::str::Chars>, run_id: &str) -> String {
+    let mut text = String::new();
+    let mut original_tag = String::new();
+
+    // Parse opening tag: <tag...>
+    if chars.peek() == Some(&'<') {
+        original_tag.push(chars.next().unwrap()); // '<'
+
+        // Read until '>'
+        while let Some(&ch) = chars.peek() {
+            original_tag.push(chars.next().unwrap());
+            if ch == '>' {
+                break;
+            }
         }
 
-        if *chars.peek().unwrap() == '<' {
-            let elem = parse_element(&mut chars)?;
-            result.push(elem);
+        // Check if it's a self-closing tag
+        if original_tag.ends_with("/>") {
+            // Check if it's a <del> tag and convert it
+            if original_tag.starts_with("<del") {
+                return format!(
+                    "<aisuggestion tool=\"linter\" status=\"pending\" runid=\"{}\" operation=\"delete\"/>",
+                    run_id
+                );
+            }
+            // Check if it's a <ins> tag and convert it
+            if original_tag.starts_with("<ins") {
+                return format!(
+                    "<aisuggestion tool=\"linter\" status=\"pending\" runid=\"{}\" operation=\"insert\"/>",
+                    run_id
+                );
+            }
+            return original_tag;
+        }
+
+        // Check if it's a <del> or <ins> tag
+        let is_del_tag = original_tag.starts_with("<del") && !original_tag.starts_with("<del/");
+        let is_ins_tag = original_tag.starts_with("<ins") && !original_tag.starts_with("<ins/");
+
+        if is_del_tag {
+            // Start building the <aisuggestion> tag with delete operation
+            text.push_str(&format!(
+                "<aisuggestion tool=\"linter\" status=\"pending\" runid=\"{}\" operation=\"delete\">",
+                run_id
+            ));
+        } else if is_ins_tag {
+            // Start building the <aisuggestion> tag with insert operation
+            text.push_str(&format!(
+                "<aisuggestion tool=\"linter\" status=\"pending\" runid=\"{}\" operation=\"insert\">",
+                run_id
+            ));
         } else {
-            let text = parse_text(&mut chars);
-            if !text.trim().is_empty() {
-                result.push(XmlPrelim::Text(text));
+            text.push_str(&original_tag);
+        }
+
+        // Parse content and closing tag
+        let mut depth = 1;
+        while depth > 0 && chars.peek().is_some() {
+            if chars.peek() == Some(&'<') {
+                // Check if it's a closing tag
+                let peeked: Vec<_> = chars.clone().take(2).collect();
+                if peeked.len() == 2 && peeked[1] == '/' {
+                    // Closing tag: </tag>
+                    let mut closing_tag = String::new();
+                    closing_tag.push(chars.next().unwrap()); // '<'
+                    closing_tag.push(chars.next().unwrap()); // '/'
+
+                    // Read until '>'
+                    while let Some(&ch) = chars.peek() {
+                        closing_tag.push(chars.next().unwrap());
+                        if ch == '>' {
+                            depth -= 1;
+                            break;
+                        }
+                    }
+
+                    // If it was a <del> or <ins> tag, close with </aisuggestion>
+                    if is_del_tag || is_ins_tag {
+                        text.push_str("</aisuggestion>");
+                    } else {
+                        text.push_str(&closing_tag);
+                    }
+                } else {
+                    // Nested opening tag
+                    text.push(chars.next().unwrap()); // '<'
+                    while let Some(&ch) = chars.peek() {
+                        text.push(chars.next().unwrap());
+                        if ch == '>' {
+                            depth += 1;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Regular content
+                text.push(chars.next().unwrap());
             }
         }
     }
 
-    Ok(result)
+    text
 }
 
 fn skip_whitespace(chars: &mut std::iter::Peekable<std::str::Chars>) {
@@ -159,7 +285,6 @@ fn parse_element(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<Xml
     // Parse children
     let mut children = Vec::new();
     loop {
-        skip_whitespace(chars);
         if chars.peek().is_none() {
             break;
         }
@@ -173,9 +298,8 @@ fn parse_element(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<Xml
             children.push(child);
         } else {
             let text = parse_text(chars);
-            if !text.trim().is_empty() {
-                children.push(XmlPrelim::Text(text));
-            }
+            // Preserve text nodes, including whitespace-only ones between elements
+            children.push(XmlPrelim::Text(text));
         }
     }
 
@@ -301,17 +425,40 @@ pub async fn execute_tool(doc: Arc<Doc>, api_key: &str) -> Result<(String, Arc<D
 
     // Get original XML string
     let original_xml = xml_fragment_to_string(&doc, &fragment);
+    info!("Original XML: {:?}", original_xml);
+    let original_xml = original_xml
+        .replace("<paragraph>", "")
+        .replace("</paragraph>", "");
+    // Generate a unique run ID for this AI generation
+    let run_id = format!(
+        "linter-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
 
     let client = reqwest::Client::new();
 
-    let system_content = r#"You are the "Schema Sentry," a specialized linguistic linter for Yjs XmlFragments.
+    let system_content = r#"You are the "Linguistic Diff Engine." Your task is to correct grammar and spelling errors using <del> and <ins> tags to show exactly what changed.
 
-Your sole purpose is to:
-1. Fix grammatical errors and spelling mistakes within the text nodes.
-2. Refine vocabulary for better clarity while maintaining the original tone.
-3. Strict Constraint: Do NOT provide any explanations, comments, or markdown code blocks (like ```xml).
-4. Output Format: Return ONLY the complete, corrected XML string. Do NOT change the XML tag names or structure; only improve the text content within them.
-5. If no errors are found, return the original XML string exactly as it is."#;
+        ### Operational Rules:
+        1. **Markup Logic**: 
+            - Use `<del>wrong</del>` for removed or incorrect text.
+            - Use `<ins>correct</ins>` for added or corrected text.
+            - Keep all original, unchanged text as plain text.
+        2. **Linguistic Scope**: Fix grammar, spelling, punctuation, and capitalization.
+        3. **Output Constraint**: 
+            - Return ONLY the processed text string containing the tags.
+            - Do NOT wrap the result in `<aisuggestion>`, Markdown code blocks, or any other tags.
+            - Do NOT provide explanations or comments.
+
+        ### Example Input:
+        "hello woold"
+
+        ### Example Output:
+        Hello, <del>woold</del><ins>world</ins>"#;
+    let user_content = format!("{}", original_xml);
 
     let request_payload = json!({
         "model": "gpt-4o-mini",
@@ -322,7 +469,7 @@ Your sole purpose is to:
             },
             {
                 "role": "user",
-                "content": original_xml
+                "content": user_content
             }
         ]
     });
@@ -351,7 +498,7 @@ Your sole purpose is to:
     info!("Linter response: {:?}", ai_output);
 
     info!("About to replace XML fragment content, this should trigger observer...");
-    replace_xml_fragment_content(&doc, &fragment, &ai_output)?;
+    replace_xml_fragment_content(&doc, &fragment, &ai_output, &run_id)?;
     info!(
         "XML fragment content replaced, transaction should have committed and triggered observer"
     );

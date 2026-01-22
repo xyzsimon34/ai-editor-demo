@@ -1,9 +1,6 @@
 use crate::{api, opts::*};
 
-use std::{
-    sync::atomic::AtomicBool,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use crate::api::state::MessageStructure;
 use atb_cli_utils::AtbCli;
@@ -12,11 +9,6 @@ use backend_core::{editor, sqlx_postgres, temporal};
 use sqlx::PgPool;
 use std::sync::atomic::Ordering;
 use tokio::{net::TcpListener, sync::watch};
-
-// Use AtomicBool for thread-safe flag access (no unsafe blocks needed)
-pub static LINTER_FLAG: AtomicBool = AtomicBool::new(false);
-pub static EMOJI_REPLACER_FLAG: AtomicBool = AtomicBool::new(false);
-pub static BACKSEATER_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub async fn run(
     db_opts: DatabaseOpts,
@@ -32,11 +24,6 @@ pub async fn run(
         Duration::from_secs(30),
     )
     .await?;
-
-    // Initialize the Yrs Document for collaborative editing
-    // Start with empty fragment - y-prosemirror will handle structure automatically
-    let doc = std::sync::Arc::new(yrs::Doc::new());
-    let _xml_fragment = doc.get_or_insert_xml_fragment("content");
 
     start_http(
         pg_pool,
@@ -79,10 +66,31 @@ pub async fn start_http(
     });
     tracing::info!("👂 Yjs update observer registered and ready");
 
+    let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
+    let schema = crate::graphql::schema()
+        .data(wf_engine.clone())
+        .data(pg_pool.clone())
+        .finish();
+    let (jwt_encoder, jwt_decoder) = http_opts.load_jwt()?;
+    let app_state = api::state::AppState::new(
+        schema,
+        wf_engine,
+        pg_pool,
+        jwt_encoder,
+        jwt_decoder,
+        api_key.clone(),
+        doc.clone(),
+        broadcast_tx.clone(),
+        user_writing_timeout_ms,
+    );
+
     // Clone values before moving into the async task
     let api_key_for_task = api_key.clone();
     let doc_for_task = doc.clone();
     let broadcast_tx_for_task = broadcast_tx.clone();
+    let linter_enabled_for_task = app_state.linter_enabled.clone();
+    let emoji_replacer_enabled_for_task = app_state.emoji_replacer_enabled.clone();
+    let backseater_enabled_for_task = app_state.backseater_enabled.clone();
 
     // Start smart auto-check task (linter/emoji replacer/backseater)
     tokio::spawn(async move {
@@ -111,9 +119,9 @@ pub async fn start_http(
                 }
             }
 
-            let linter_enabled = LINTER_FLAG.load(Ordering::Relaxed);
-            let emoji_replacer_enabled = EMOJI_REPLACER_FLAG.load(Ordering::Relaxed);
-            let backseater_enabled = BACKSEATER_FLAG.load(Ordering::Relaxed);
+            let linter_enabled = linter_enabled_for_task.load(Ordering::Relaxed);
+            let emoji_replacer_enabled = emoji_replacer_enabled_for_task.load(Ordering::Relaxed);
+            let backseater_enabled = backseater_enabled_for_task.load(Ordering::Relaxed);
 
             let current_content = editor::get_doc_content(&doc_for_task);
             if current_content.is_empty() || current_content == before_content {
@@ -269,24 +277,6 @@ pub async fn start_http(
         }
         tracing::info!("🔌 Linter task exiting");
     });
-
-    let wf_engine = temporal::WorkflowEngine::new(client, task_queue);
-    let schema = crate::graphql::schema()
-        .data(wf_engine.clone())
-        .data(pg_pool.clone())
-        .finish();
-    let (jwt_encoder, jwt_decoder) = http_opts.load_jwt()?;
-    let app_state = api::state::AppState::new(
-        schema,
-        wf_engine,
-        pg_pool,
-        jwt_encoder,
-        jwt_decoder,
-        api_key,
-        doc,
-        broadcast_tx,
-        user_writing_timeout_ms,
-    );
 
     tracing::info!("http listening on {}", http_opts.host);
     let app = api::build_app(&http_opts, app_state)?;
