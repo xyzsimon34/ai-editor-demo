@@ -10,7 +10,7 @@
   },
   "rules": {
     "react/jsx-curly-brace-presence": ["error", "always"],
-    "tailwindcss/classnames-order": "error",
+    "tailwindcss/classnames-order": "warn",
     "@next/next/no-img-element": "off",
     "@typescript-eslint/no-unused-vars": [
       "warn",

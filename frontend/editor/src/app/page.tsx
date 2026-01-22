@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 
+import { SidebarInset, SidebarProvider } from '@/components/base/Sidebar'
+import { TooltipProvider } from '@/components/base/Tooltip'
 import Editor from '@/components/Editor'
 import { EditorSidebar } from '@/components/EditorSidebar'
 import { Header } from '@/components/Layout'
-import { SidebarProvider, SidebarInset } from '@/components/base/Sidebar'
-import { TooltipProvider } from '@/components/base/Tooltip'
 
 type SidebarProps = {
   isConnected: boolean

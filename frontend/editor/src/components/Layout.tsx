@@ -5,10 +5,7 @@ import { FileText, Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-export const Header = ({
-  className,
-  children
-}: { children?: ReactNode } & HTMLAttributes<HTMLElement>) => {
+export const Header = ({ className, children }: { children?: ReactNode } & HTMLAttributes<HTMLElement>) => {
   return (
     <header
       className={cn(

@@ -21,9 +21,9 @@ import {
   UploadImagesPlugin
 } from 'novel'
 import { Markdown } from 'tiptap-markdown'
-import { AISuggestion } from './aiSuggestion'
 
 import { AIGeneratedNode } from './aiGeneratedNode'
+import { AISuggestion } from './aiSuggestion'
 
 const aiHighlight = AIHighlight
 const placeholder = Placeholder.configure({
@@ -166,7 +166,7 @@ export const getExtensions = () => {
     AIGeneratedNode,
     AISuggestion // Mark for AI suggestions - compatible with y-prosemirror
   ]
-  
+
   return extensions
 }
 

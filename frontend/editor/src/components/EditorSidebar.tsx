@@ -79,16 +79,16 @@ export function EditorSidebar({
   onEmojiReplacerToggle
 }: EditorSidebarProps) {
   return (
-    <Sidebar side={"left"} variant={"sidebar"} collapsible={"icon"}>
+    <Sidebar side={'left'} variant={'sidebar'} collapsible={'icon'}>
       <SidebarHeader>
-        <div className={"flex items-center gap-2.5 px-2 py-3"}>
-          <div className={"flex size-8 items-center justify-center rounded-md"}></div>
-          <div className={"flex flex-col"}></div>
+        <div className={'flex items-center gap-2.5 px-2 py-3'}>
+          <div className={'flex size-8 items-center justify-center rounded-md'}></div>
+          <div className={'flex flex-col'}></div>
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>{"AI Features"}</SidebarGroupLabel>
+          <SidebarGroupLabel>{'AI Features'}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -145,10 +145,16 @@ export function EditorSidebar({
         {isAutoModeEnabled && isPending && remainingTime !== null && (
           <SidebarGroup>
             <SidebarGroupContent>
-              <div className={"px-2 py-1.5"}>
-                <div className={"flex min-w-0 items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2"}>
-                  <div className={"size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400"} />
-                  <span className={"min-w-0 truncate text-xs font-medium text-blue-400"}>{`AI processing in ${remainingTime}s...`}</span>
+              <div className={'px-2 py-1.5'}>
+                <div
+                  className={
+                    'flex min-w-0 items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2'
+                  }
+                >
+                  <div className={'size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400'} />
+                  <span
+                    className={'min-w-0 truncate text-xs font-medium text-blue-400'}
+                  >{`AI processing in ${remainingTime}s...`}</span>
                 </div>
               </div>
             </SidebarGroupContent>
@@ -158,22 +164,22 @@ export function EditorSidebar({
         <SidebarSeparator />
 
         <SidebarGroup>
-          <SidebarGroupLabel>{"Status"}</SidebarGroupLabel>
+          <SidebarGroupLabel>{'Status'}</SidebarGroupLabel>
           <SidebarGroupContent>
-            <div className={"space-y-2.5 px-2 py-1.5"}>
-              <div className={"flex min-w-0 items-center gap-2.5 rounded-md bg-zinc-800/30 px-2.5 py-2"}>
+            <div className={'space-y-2.5 px-2 py-1.5'}>
+              <div className={'flex min-w-0 items-center gap-2.5 rounded-md bg-zinc-800/30 px-2.5 py-2'}>
                 <ConnectionIndicator isConnected={isConnected} isServerSynced={isServerSynced} />
-                <div className={"flex min-w-0 flex-1 flex-col"}>
-                  <span className={"truncate text-xs font-medium text-zinc-300"}>{saveStatus}</span>
-                  <span className={"truncate text-[10px] text-zinc-500"}>
+                <div className={'flex min-w-0 flex-1 flex-col'}>
+                  <span className={'truncate text-xs font-medium text-zinc-300'}>{saveStatus}</span>
+                  <span className={'truncate text-[10px] text-zinc-500'}>
                     {isConnected && isServerSynced ? 'All synced' : isConnected ? 'Syncing...' : 'Offline'}
                   </span>
                 </div>
               </div>
               {characterCount !== undefined && characterCount > 0 && (
-                <div className={"min-w-0 rounded-md bg-zinc-800/30 px-2.5 py-2"}>
-                  <div className={"truncate text-xs font-medium text-zinc-300"}>{characterCount.toLocaleString()}</div>
-                  <div className={"truncate text-[10px] text-zinc-500"}>{"characters"}</div>
+                <div className={'min-w-0 rounded-md bg-zinc-800/30 px-2.5 py-2'}>
+                  <div className={'truncate text-xs font-medium text-zinc-300'}>{characterCount.toLocaleString()}</div>
+                  <div className={'truncate text-[10px] text-zinc-500'}>{'characters'}</div>
                 </div>
               )}
             </div>

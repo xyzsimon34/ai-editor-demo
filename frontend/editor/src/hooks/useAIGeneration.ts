@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { refineText, type RefineAction } from '@/services/backend'
 import type { AIOption } from '@/types/ai'
 import { useCompletion } from '@ai-sdk/react'
+
 import { useAsyncGuard } from './useAsyncGuard'
 
 export interface UseAIGenerationOptions {

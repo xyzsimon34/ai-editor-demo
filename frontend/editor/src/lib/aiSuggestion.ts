@@ -11,7 +11,9 @@ function createDataAttribute(name: string, defaultValue: string | null = null) {
   return {
     default: defaultValue,
     parseHTML: (element: HTMLElement) => element.getAttribute(`data-${name}`),
-    renderHTML: (attributes: AttributeAttributes) => ({ [`data-${name}`]: attributes[name as keyof AttributeAttributes] }),
+    renderHTML: (attributes: AttributeAttributes) => ({
+      [`data-${name}`]: attributes[name as keyof AttributeAttributes]
+    })
   }
 }
 
@@ -24,22 +26,22 @@ export const AISuggestion = Mark.create({
       status: createDataAttribute('status', 'pending'),
       aimodel: createDataAttribute('aimodel'),
       runid: createDataAttribute('runid'),
-      tool: createDataAttribute('tool'),
+      tool: createDataAttribute('tool')
     }
   },
 
   parseHTML() {
     return [
       {
-        tag: 'span[data-type="ai-suggestion"]',
-      },
+        tag: 'span[data-type="ai-suggestion"]'
+      }
     ]
   },
 
   renderHTML({ HTMLAttributes }) {
     const status = HTMLAttributes.status || 'pending'
     const baseAttributes = {
-      'data-type': 'ai-suggestion',
+      'data-type': 'ai-suggestion'
     }
 
     if (status === 'pending') {
@@ -47,21 +49,21 @@ export const AISuggestion = Mark.create({
         'span',
         mergeAttributes(HTMLAttributes, {
           ...baseAttributes,
-          class: 'ai-suggestion-pending',
+          class: 'ai-suggestion-pending'
         }),
-        0,
+        0
       ]
     }
-    
+
     const classes = ['ai-suggestion', `ai-suggestion-${status}`].filter(Boolean).join(' ')
-    
+
     return [
       'span',
       mergeAttributes(HTMLAttributes, {
         ...baseAttributes,
-        class: classes,
+        class: classes
       }),
-      0,
+      0
     ]
-  },
+  }
 })

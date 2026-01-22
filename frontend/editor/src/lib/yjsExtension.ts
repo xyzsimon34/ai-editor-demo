@@ -11,7 +11,7 @@ export async function createYjsExtension(yXmlFragment: Y.XmlFragment) {
     // This function runs when the editor is ready and plugins are needed
     addProseMirrorPlugins() {
       const syncPlugin = ySyncPlugin(yXmlFragment)
-      
+
       return [syncPlugin, yUndoPlugin()]
     }
   })

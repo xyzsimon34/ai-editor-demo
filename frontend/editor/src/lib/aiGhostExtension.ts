@@ -1,9 +1,9 @@
 import React from 'react'
 import { Extension } from '@tiptap/core'
+import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { createRoot } from 'react-dom/client'
-import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 
 import Check from '@/components/icons/Check'
 import Close from '@/components/icons/Close'
@@ -119,7 +119,7 @@ function createMarkedSuggestionDecorations(
 
   const inlineDecoration = Decoration.inline(markedSuggestion.from, markedSuggestion.to, {
     class: `${colorClass} opacity-60`,
-    style: 'opacity: 0.6;',
+    style: 'opacity: 0.6;'
   })
 
   const widgetDecoration = createActionButtonsWidget(markedSuggestion.to, extension)
@@ -127,7 +127,9 @@ function createMarkedSuggestionDecorations(
   return [inlineDecoration, widgetDecoration]
 }
 
-function findPendingAISuggestion(doc: ProseMirrorNode): { from: number; to: number; text: string; agentType: AgentType } | null {
+function findPendingAISuggestion(
+  doc: ProseMirrorNode
+): { from: number; to: number; text: string; agentType: AgentType } | null {
   let startPos: number | null = null
   let endPos: number | null = null
   let agentType: AgentType = 'composer'

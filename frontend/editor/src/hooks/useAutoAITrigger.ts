@@ -29,7 +29,7 @@ function getContentSnapshot(editor: EditorInstance): ContentSnapshot {
       const hasPendingAISuggestion = node.marks.some(
         (mark) => mark.type.name === 'aisuggestion' && mark.attrs?.status === 'pending'
       )
-      
+
       if (!hasPendingAISuggestion) {
         content += node.text
         charCount += node.text.length

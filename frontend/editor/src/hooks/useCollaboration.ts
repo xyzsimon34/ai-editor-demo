@@ -132,10 +132,13 @@ export function useCollaboration(
         const parsed = JSON.parse(data) as WebSocketMessage
         if (parsed.type === 'AI_STATUS') {
           const message = parsed.message.toLowerCase()
-          const isToggleStateMessage = 
-            (message.includes('linter') || message.includes('backseater') || message.includes('emoji replacer') || message.includes('emoji_replacer')) &&
+          const isToggleStateMessage =
+            (message.includes('linter') ||
+              message.includes('backseater') ||
+              message.includes('emoji replacer') ||
+              message.includes('emoji_replacer')) &&
             (message.includes('enabled') || message.includes('disabled'))
-          
+
           if (isToggleStateMessage) {
             if (message.includes('linter')) {
               const enabled = message.includes('enabled')
@@ -149,7 +152,7 @@ export function useCollaboration(
             }
             return
           }
-          
+
           setAiStatus(parsed.status)
           setAiStatusMessage(parsed.message)
         } else if (parsed.type === 'SYNC_COMPLETE') {

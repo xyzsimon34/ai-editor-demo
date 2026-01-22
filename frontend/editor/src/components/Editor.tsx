@@ -99,16 +99,19 @@ export default function Editor({ onSaveStatusChange, onSidebarPropsChange }: Edi
   }
 
   const { isLocalSynced } = useYjsPersistence({ docId: DOC_ID, ydoc })
-  
-  const handleToggleStateChange = useCallback((toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => {
-    if (toggleType === 'LINTER') {
-      setIsLinterEnabled(enabled)
-    } else if (toggleType === 'BACKSEATER') {
-      setIsBackseaterEnabled(enabled)
-    } else if (toggleType === 'EMOJI_REPLACER') {
-      setIsEmojiReplacerEnabled(enabled)
-    }
-  }, [])
+
+  const handleToggleStateChange = useCallback(
+    (toggleType: 'LINTER' | 'BACKSEATER' | 'EMOJI_REPLACER', enabled: boolean) => {
+      if (toggleType === 'LINTER') {
+        setIsLinterEnabled(enabled)
+      } else if (toggleType === 'BACKSEATER') {
+        setIsBackseaterEnabled(enabled)
+      } else if (toggleType === 'EMOJI_REPLACER') {
+        setIsEmojiReplacerEnabled(enabled)
+      }
+    },
+    []
+  )
 
   const {
     status: collaborationStatus,
