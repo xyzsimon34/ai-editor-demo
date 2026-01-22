@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { Command, createSuggestionItems, renderItems } from 'novel'
 
-import { uploadFn } from '@/lib/image-upload'
+import { uploadFn } from '@/lib/imageUpload'
 
 export const suggestionItems = createSuggestionItems([
   {

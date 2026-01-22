@@ -4,8 +4,8 @@ import { Fragment, useEffect, type ReactNode } from 'react'
 import { EditorBubble, removeAIHighlight, useEditor } from 'novel'
 
 import { Button } from '../base/Button'
-import Magic from '../icons/magic'
-import { AISelector } from './ai-selector'
+import Magic from '../icons/Magic'
+import { AISelector } from './AISelector'
 
 interface GenerativeMenuSwitchProps {
   children: ReactNode

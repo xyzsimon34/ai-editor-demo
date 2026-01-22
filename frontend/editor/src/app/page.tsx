@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-import Editor from '@/components/editor'
+import Editor from '@/components/Editor'
 import { EditorSidebar } from '@/components/EditorSidebar'
 import { Header } from '@/components/Layout'
 import { SidebarProvider, SidebarInset } from '@/components/base/Sidebar'

@@ -10,10 +10,10 @@ import { Command, CommandInput } from '@/components/base/Command'
 
 import { Button } from '../base/Button'
 import { ScrollArea } from '../base/ScrollArea'
-import CrazySpinner from '../icons/crazy-spinner'
-import Magic from '../icons/magic'
-import AICompletionCommands from './ai-completion-command'
-import AISelectorCommands from './ai-selector-commands'
+import CrazySpinner from '../icons/CrazySpinner'
+import Magic from '../icons/Magic'
+import AICompletionCommands from './AICompletionCommand'
+import AISelectorCommands from './AISelectorCommands'
 
 interface AISelectorProps {
   open: boolean

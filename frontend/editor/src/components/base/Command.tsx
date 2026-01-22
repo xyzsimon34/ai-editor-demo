@@ -5,7 +5,7 @@ import { Command as CommandPrimitive } from 'cmdk'
 
 import { cn } from '@/lib/utils'
 
-import Magic from '../icons/magic'
+import Magic from '../icons/Magic'
 
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
