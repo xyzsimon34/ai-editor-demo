@@ -19,6 +19,27 @@ interface ContentSnapshot {
   charCount: number
 }
 
+function getContentSnapshot(editor: EditorInstance): ContentSnapshot {
+  const state = editor.state
+  let content = ''
+  let charCount = 0
+
+  state.doc.descendants((node) => {
+    if (node.isText && node.text) {
+      const hasPendingAISuggestion = node.marks.some(
+        (mark) => mark.type.name === 'aisuggestion' && mark.attrs?.status === 'pending'
+      )
+      
+      if (!hasPendingAISuggestion) {
+        content += node.text
+        charCount += node.text.length
+      }
+    }
+  })
+
+  return { content, charCount }
+}
+
 export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAITriggerOptions) {
   const { enabled, debounceMs = 3000, minCharacters = 3, minChangeThreshold = 50, onTrigger } = options
 
@@ -34,7 +55,6 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
     lastContent: ''
   })
 
-  // Keep callback ref stable
   const onTriggerRef = useRef(onTrigger)
 
   useEffect(() => {
@@ -61,20 +81,11 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
 
       const delta = charCount - lastContentLength
       const magnitude = Math.abs(delta)
-
       const hasEnoughChars = charCount >= minCharacters || delta < 0
 
-      if (!hasEnoughChars) {
-        return false
-      }
-
-      if (magnitude < minChangeThreshold) {
-        return false
-      }
-
-      if (content === lastContent) {
-        return false
-      }
+      if (!hasEnoughChars) return false
+      if (magnitude < minChangeThreshold) return false
+      if (content === lastContent) return false
 
       return true
     },
@@ -82,31 +93,18 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
   )
 
   const scheduleAITrigger = useCallback(() => {
-    if (!editor || !enabled) {
-      return
-    }
-
-    if (isExecutingRef.current) {
-      return
-    }
+    if (!editor || !enabled) return
+    if (isExecutingRef.current) return
 
     const now = Date.now()
     const timeSinceLastTrigger = now - lastTriggerTimeRef.current
-    if (timeSinceLastTrigger < 2000) {
-      return
-    }
+    if (timeSinceLastTrigger < 2000) return
 
     const scheduleSnapshot = getContentSnapshot(editor)
-
-    if (scheduleSnapshot.content === stateRef.current.lastContent) {
-      return
-    }
+    if (scheduleSnapshot.content === stateRef.current.lastContent) return
 
     const shouldSchedule = shouldTriggerAI(scheduleSnapshot)
-
-    if (!shouldSchedule) {
-      return
-    }
+    if (!shouldSchedule) return
 
     clearTimers()
     setIsPending(true)
@@ -166,28 +164,4 @@ export function useAutoAITrigger(editor: EditorInstance | null, options: AutoAIT
     isPending,
     remainingTime
   }
-}
-
-function getContentSnapshot(editor: EditorInstance): ContentSnapshot {
-  // Extract text excluding pending AI suggestions (to prevent loop)
-  const state = editor.state
-  let content = ''
-  let charCount = 0
-
-  state.doc.descendants((node, pos) => {
-    if (node.isText && node.text) {
-      // Check if this text node has a pending aisuggestion mark
-      const hasPendingAISuggestion = node.marks.some(
-        (mark) => mark.type.name === 'aisuggestion' && mark.attrs?.status === 'pending'
-      )
-      
-      // Only include text that doesn't have pending AI suggestions
-      if (!hasPendingAISuggestion) {
-        content += node.text
-        charCount += node.text.length
-      }
-    }
-  })
-
-  return { content, charCount }
 }
