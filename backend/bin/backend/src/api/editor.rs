@@ -361,24 +361,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     // 3. APPLY PHASE (Mutation)
                                     match result {
                                         Ok(output) => {
-                                            if let Some(text) = output {
-                                                tracing::info!("✅ Generated AI suggestion (preview mode)");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_SUGGESTION",
-                                                    "complete",
-                                                    &text,
-                                                );
-                                            } else {
-                                                // The agent modifies the doc directly via run_composer
-                                                tracing::info!("✅ Applied AI changes via CRDT");
-                                                delegate_to_frontend(
-                                                    &state_for_task,
-                                                    "AI_STATUS",
-                                                    "complete",
-                                                    "AI agent finished successfully",
-                                                );
-                                            }
+                                            // The agent modifies the doc directly via new_composer
+                                            tracing::info!("✅ Applied AI changes via CRDT");
+                                            delegate_to_frontend(
+                                                &state_for_task,
+                                                "AI_STATUS",
+                                                "complete",
+                                                &output,
+                                            );
                                         }
                                         Err(e) => {
                                             let error_msg = e.to_string();
