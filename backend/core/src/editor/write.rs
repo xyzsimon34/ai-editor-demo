@@ -58,12 +58,8 @@ pub fn format_word_stream(content: &str) -> Vec<String> {
     result
 }
 
-/// Check if the document has content structure (at least one paragraph)
-pub fn is_field_populated(doc: &Arc<Doc>, field_name: &str) -> bool {
-    let xml_fragment = doc.get_or_insert_xml_fragment(field_name);
-    let txn = doc.transact();
-    xml_fragment.len(&txn) > 0
-}
+// Re-export function from xml_structure module
+pub use crate::editor::xml_structure::is_field_populated;
 
 /// 將 AI 生成的內容寫入 Doc 的最後一個段落
 ///
@@ -323,84 +319,11 @@ pub fn apply_replacements(
     Ok(())
 }
 
-/// Helper: Recursively find all XmlTextRef nodes in a fragment
-/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
-pub fn collect_text_nodes(
-    txn: &impl yrs::ReadTxn,
-    fragment: &yrs::XmlFragmentRef,
-    collector: &mut Vec<yrs::XmlTextRef>,
-) {
-    use yrs::types::xml::XmlOut;
+// Re-export functions from xml_structure module
+use crate::editor::xml_structure::collect_text_nodes;
 
-    let len = fragment.len(txn);
-    for i in 0..len {
-        if let Some(child) = fragment.get(txn, i) {
-            match child {
-                XmlOut::Element(elem) => {
-                    // Recurse into element
-                    collect_text_nodes_from_elem(txn, &elem, collector);
-                }
-                XmlOut::Text(text_ref) => {
-                    collector.push(text_ref);
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-/// Helper: Recursively find all XmlTextRef nodes in an element
-/// Uses ReadTxn trait so it works with both Transaction and TransactionMut
-fn collect_text_nodes_from_elem(
-    txn: &impl yrs::ReadTxn,
-    elem: &yrs::XmlElementRef,
-    collector: &mut Vec<yrs::XmlTextRef>,
-) {
-    use yrs::types::xml::XmlOut;
-
-    let len = elem.len(txn);
-    for i in 0..len {
-        if let Some(child) = elem.get(txn, i) {
-            match child {
-                XmlOut::Element(child_elem) => {
-                    collect_text_nodes_from_elem(txn, &child_elem, collector);
-                }
-                XmlOut::Text(text_ref) => {
-                    collector.push(text_ref);
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-pub fn push_element(
-    parent: &XmlOut,
-    new_tag_name: &str,
-    content: &str,
-    attrs: &[(&str, &str)],
-    txn: &mut TransactionMut<'_>,
-) -> Result<XmlElementRef> {
-    let new_elem = match parent {
-        XmlOut::Element(elem) => {
-            let len = elem.len(txn);
-            elem.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
-        }
-        XmlOut::Fragment(fragment) => {
-            let len = fragment.len(txn);
-            fragment.insert(txn, len, XmlElementPrelim::empty(new_tag_name))
-        }
-        _ => return Err(anyhow::anyhow!("Parent is not an element or fragment")),
-    };
-
-    for (key, value) in attrs {
-        new_elem.insert_attribute(txn, *key, *value);
-    }
-
-    new_elem.insert(txn, 0, XmlTextPrelim::new(content));
-
-    Ok(new_elem)
-}
+// Re-export function from xml_structure module
+pub use crate::editor::xml_structure::push_element;
 #[cfg(test)]
 mod tests {
     use super::*;
