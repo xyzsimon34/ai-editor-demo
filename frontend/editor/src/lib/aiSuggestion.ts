@@ -5,6 +5,7 @@ interface AttributeAttributes {
   aimodel?: string | null
   runid?: string | null
   tool?: string | null
+  operation?: string | null
 }
 
 function createDataAttribute(name: string, defaultValue: string | null = null) {
@@ -26,7 +27,8 @@ export const AISuggestion = Mark.create({
       status: createDataAttribute('status', 'pending'),
       aimodel: createDataAttribute('aimodel'),
       runid: createDataAttribute('runid'),
-      tool: createDataAttribute('tool')
+      tool: createDataAttribute('tool'),
+      operation: createDataAttribute('operation')
     }
   },
 
@@ -39,12 +41,17 @@ export const AISuggestion = Mark.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    const status = HTMLAttributes.status || 'pending'
+    const status = HTMLAttributes['data-status'] || HTMLAttributes.status || 'pending'
+    const tool = HTMLAttributes['data-tool'] || HTMLAttributes.tool
     const baseAttributes = {
       'data-type': 'ai-suggestion'
     }
 
     if (status === 'pending') {
+      // Linter suggestions: don't add ai-suggestion-pending class (styled via decorations)
+      if (tool === 'linter') {
+        return ['span', mergeAttributes(HTMLAttributes, baseAttributes), 0]
+      }
       return [
         'span',
         mergeAttributes(HTMLAttributes, {
