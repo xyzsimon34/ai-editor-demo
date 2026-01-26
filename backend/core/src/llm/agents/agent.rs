@@ -3,7 +3,7 @@ use crate::llm::tools::linter;
 use crate::llm::tools::paragraph_inserter;
 use anyhow::Result;
 use std::sync::{Arc, atomic::AtomicU64};
-use yrs::{Doc, Transact, XmlFragment};
+use yrs::Doc;
 
 pub async fn run_composer(
     api_key: &str,
@@ -24,12 +24,14 @@ pub async fn run_composer(
     // let words = crate::editor::format_word_stream(&result);
     // crate::editor::append_ai_content_word_by_word(doc, words, 100, user_state).await?;
     // Generate a unique run ID for this AI generation
-    let run_id = format!("extender-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis());
+    let run_id = format!(
+        "extender-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
     crate::editor::append_ai_content_to_doc(doc, &result, Some("extender"), Some(&run_id))?;
-
 
     if preview_mode {
         return Ok(Some(result));

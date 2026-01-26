@@ -4,12 +4,16 @@ use crate::{
 };
 
 use axum::extract::FromRef;
-use backend_core::temporal::WorkflowEngine;
+use backend_core::{
+    llm::agents::Agent,
+    temporal::WorkflowEngine,
+};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64},
+    Mutex,
 };
 use tokio::sync::broadcast;
 use yrs::Doc;
@@ -29,6 +33,8 @@ pub struct AppState {
     pub linter_enabled: Arc<AtomicBool>,
     pub emoji_replacer_enabled: Arc<AtomicBool>,
     pub backseater_enabled: Arc<AtomicBool>,
+    /// Agent 實例（長期存活，在檔案創建時初始化，存活至系統關機）
+    pub agent: Option<Arc<Mutex<Agent>>>,
 }
 
 // Manual FromRef implementations for fields that need extraction
@@ -88,7 +94,19 @@ impl AppState {
             linter_enabled: Arc::new(AtomicBool::new(false)),
             emoji_replacer_enabled: Arc::new(AtomicBool::new(false)),
             backseater_enabled: Arc::new(AtomicBool::new(false)),
+            agent: None,  // Agent 在檔案創建時初始化
         }
+    }
+    
+    /// 初始化 Agent（在檔案創建時調用）
+    pub fn init_agent(&mut self, agent: Agent) {
+        self.agent = Some(Arc::new(Mutex::new(agent)));
+        tracing::info!("🤖 Agent initialized in AppState");
+    }
+    
+    /// 獲取 Agent（如果已初始化）
+    pub fn get_agent(&self) -> Option<Arc<Mutex<Agent>>> {
+        self.agent.clone()
     }
 }
 
