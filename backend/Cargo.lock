@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "backend-app"
-version = "0.1.0"
+version = "0.1.0-pandect"
 dependencies = [
  "anyhow",
  "async-graphql",
@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "backend-core"
-version = "0.1.0"
+version = "0.1.0-pandect"
 dependencies = [
  "anyhow",
  "atb",

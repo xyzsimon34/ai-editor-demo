@@ -12,7 +12,7 @@ pub async fn execute_tool(
     let client = reqwest::Client::new();
 
     let system_content = format!(
-        "You are a helpful writing assistant.\n\nRole: {role}\n\nTask: Extend the provided text.\nRules:\n- Preserve the existing tone, style, and meaning.\n- If context metadata is provided, use it to stay accurate and consistent.\n- Output ONLY the continuation (do not repeat the original text)."
+        "You will finish the user's sentence.\n\nRole: {role}\n\nTask: Extend the provided text.\nRules:\n- Preserve the existing tone, style, and meaning.\n- If context metadata is provided, use it to stay accurate and consistent.\n- Output ONLY the continuation (do not repeat the original text)."
     );
 
     let mut user_content = String::new();
