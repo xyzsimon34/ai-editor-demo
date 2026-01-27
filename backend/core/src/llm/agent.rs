@@ -2,20 +2,21 @@ use crate::llm::tools::extender;
 use crate::llm::tools::linter;
 use crate::llm::tools::paragraph_inserter;
 use anyhow::Result;
-use std::sync::{Arc, atomic::AtomicU64};
-use yrs::{Doc, Transact, XmlFragment};
+use std::sync::{atomic::AtomicU64, Arc};
+use yrs::Doc;
 
 pub async fn run_composer(
     api_key: &str,
     role: &str,
     doc: &Arc<Doc>,
-    user_last_used_at: Arc<AtomicU64>,
-    user_writing_timeout_ms: u64,
+    _user_last_used_at: Arc<AtomicU64>,
+    _user_writing_timeout_ms: u64,
+    extender_context: Option<crate::llm::types::ExtenderContext>,
     preview_mode: bool,
 ) -> Result<Option<String>> {
     let api_key = api_key.to_string();
     let article_draft = crate::editor::get_doc_content(doc);
-    let result = extender::execute_tool(&article_draft, role, &api_key)
+    let result = extender::execute_tool(&article_draft, role, extender_context.as_ref(), &api_key)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to execute tool: {}", e))?;
     println!("result: {}", result);

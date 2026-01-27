@@ -7,6 +7,14 @@ pub struct McpTool {
     pub input_schema: serde_json::Value,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ExtenderContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
 // pub fn get_sub_agent_definitions() -> Vec<McpTool> {
 //     vec![
 //         McpTool {

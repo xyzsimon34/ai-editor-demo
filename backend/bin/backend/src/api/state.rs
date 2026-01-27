@@ -6,6 +6,7 @@ use crate::{
 use axum::extract::FromRef;
 use backend_core::temporal::WorkflowEngine;
 use serde::Deserialize;
+use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::{
     Arc,
@@ -111,6 +112,8 @@ pub struct AiCommand {
 pub struct AgentPayload {
     pub role: String,
     pub mode: Option<String>,
+    pub instruction: Option<String>,
+    pub context: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -1,12 +1,38 @@
 use anyhow::{Context, Result};
 use serde_json::json;
 
-// TODO: remove _identity
-pub async fn execute_tool(article_draft: &str, _identity: &str, api_key: &str) -> Result<String> {
+use crate::llm::types::ExtenderContext;
+
+pub async fn execute_tool(
+    article_draft: &str,
+    role: &str,
+    context: Option<&ExtenderContext>,
+    api_key: &str,
+) -> Result<String> {
     let client = reqwest::Client::new();
 
-    let system_content = 
-        "You will finish the user's sentence as aggressively pessimistic as possible. **ONLY** respond with your generated part of the sentence, excluding the user's original context.".to_string();
+    let system_content = format!(
+        "You are a helpful writing assistant.\n\nRole: {role}\n\nTask: Extend the provided text.\nRules:\n- Preserve the existing tone, style, and meaning.\n- If context metadata is provided, use it to stay accurate and consistent.\n- Output ONLY the continuation (do not repeat the original text)."
+    );
+
+    let mut user_content = String::new();
+    if let Some(ctx) = context {
+        if let Some(instruction) = ctx.instruction.as_deref() {
+            user_content.push_str("<instruction>\n");
+            user_content.push_str(instruction);
+            user_content.push_str("\n</instruction>\n\n");
+        }
+
+        if let Some(metadata) = ctx.metadata.as_ref() {
+            user_content.push_str("<context>\n");
+            user_content.push_str(&serde_json::to_string_pretty(metadata)?);
+            user_content.push_str("\n</context>\n\n");
+        }
+    }
+
+    user_content.push_str("<document>\n");
+    user_content.push_str(article_draft);
+    user_content.push_str("\n</document>");
 
     let request_payload = json!({
         "model": "gpt-4o-mini",
@@ -17,9 +43,10 @@ pub async fn execute_tool(article_draft: &str, _identity: &str, api_key: &str) -
             },
             {
                 "role": "user",
-                "content": article_draft
+                "content": user_content
             }
-        ]
+        ],
+        "temperature": 0.7
     });
 
     let response = client

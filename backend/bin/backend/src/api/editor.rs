@@ -234,11 +234,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 "AGENT" => {
                                     tracing::info!("🤖 processing {}...", cmd_action);
 
-                                    // Extract role from Agent payload
-                                    let (role, mode) = match cmd_payload {
+                                    let (role, mode, extender_context) = match cmd_payload {
                                         Some(crate::api::state::AiCommandPayload::Agent(
                                             agent_payload,
-                                        )) => (agent_payload.role, agent_payload.mode),
+                                        )) => {
+                                            let extender_context = if agent_payload.instruction.is_some()
+                                                || agent_payload.context.is_some()
+                                            {
+                                                Some(backend_core::llm::types::ExtenderContext {
+                                                    instruction: agent_payload.instruction,
+                                                    metadata: agent_payload.context,
+                                                })
+                                            } else {
+                                                None
+                                            };
+
+                                            (agent_payload.role, agent_payload.mode, extender_context)
+                                        }
                                         Some(crate::api::state::AiCommandPayload::Refiner(_)) => {
                                             tracing::error!(
                                                 "Agent command received Refiner payload"
@@ -301,6 +313,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 &state_for_task.editor_doc,
                                                 user_last_used_at,
                                                 state_for_task.user_writing_timeout_ms,
+                                                extender_context,
                                                 preview_mode,
                                             )
                                             .await
