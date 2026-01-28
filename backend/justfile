@@ -43,6 +43,18 @@ docker-push:
     docker push {{DOCKER_REGISTRY}}:v{{SEM_VER}}
     docker image prune -f
 
+build-docker-arm:
+    docker build --platform=linux/arm64 \
+        --progress plain \
+        -f ./Dockerfile \
+        -t {{DOCKER_REGISTRY}}:latest-arm \
+        -t {{DOCKER_REGISTRY}}:v{{SEM_VER}}-arm .
+
+docker-push-arm:
+    docker push {{DOCKER_REGISTRY}}:latest-arm
+    docker push {{DOCKER_REGISTRY}}:v{{SEM_VER}}-arm
+    docker image prune -f
+
 ###########################################################
 ### Platform Development
 ###

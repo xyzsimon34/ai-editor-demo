@@ -12,7 +12,12 @@ RUN cargo chef prepare --recipe-path recipe.json
 # Cached Builder
 FROM rust-base AS builder
 WORKDIR /app
-ENV RUSTFLAGS="-C target-cpu=x86-64-v2"
+
+# Multi-platform support: set RUSTFLAGS only for amd64
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+       export RUSTFLAGS="-C target-cpu=x86-64-v2"; \
+    fi
 
 RUN cargo install cargo-chef
 COPY --from=planner /app/recipe.json recipe.json

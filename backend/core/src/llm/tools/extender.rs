@@ -12,7 +12,7 @@ pub async fn execute_tool(
     let client = reqwest::Client::new();
 
     let system_content = format!(
-        "Role: {role}\n\nTask: ONLY finish the user's sentence if it's not complete. Do NOT start a new sentence.\nRules:\n- Preserve the existing tone, style, and meaning.\n- If context metadata is provided, use it to stay accurate and consistent.\n- ONLY respond with your generated part of the sentence (do not repeat the original text)."
+        "Role: {role}\n\nTask: Either finish the user's sentence if it's not complete, or write ONE new sentence.  Start a new paragraph as needed.\nRules:\n- Preserve the existing tone, style, and meaning. Do not repeat what you have already generated.\n- If context metadata is provided, use it to stay accurate and consistent.\n- ONLY respond with your generated part (do not repeat the original text)."
     );
 
     let mut user_content = String::new();
@@ -29,6 +29,8 @@ pub async fn execute_tool(
             user_content.push_str("\n</context>\n\n");
         }
     }
+
+    tracing::info!("article_draft: {}", article_draft);
 
     user_content.push_str("<document>\n");
     user_content.push_str(article_draft);
@@ -64,10 +66,30 @@ pub async fn execute_tool(
 
     let result: serde_json::Value = response.json().await?;
 
-    let extended_output = result["choices"][0]["message"]["content"]
+    let mut extended_output = result["choices"][0]["message"]["content"]
         .as_str()
         .context("Failed to get content from Extender response")?
         .to_string();
+
+    let needs_leading_space = !article_draft
+        .chars()
+        .last()
+        .is_some_and(|c| c.is_whitespace());
+
+    if needs_leading_space && !extended_output.is_empty() {
+        let first_char = extended_output.chars().next();
+        let starts_with_whitespace = first_char.is_some_and(|c| c.is_whitespace());
+        let attaches_to_previous = first_char.is_some_and(|c| {
+            matches!(
+                c,
+                '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '\'' | '’'
+            )
+        });
+
+        if !starts_with_whitespace && !attaches_to_previous {
+            extended_output.insert(0, ' ');
+        }
+    }
 
     Ok(extended_output)
 }
